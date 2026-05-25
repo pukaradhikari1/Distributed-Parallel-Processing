@@ -6,6 +6,8 @@ import time
 import json
 import os
 import sys
+import socket
+import threading
 from concurrent import futures
 
 current_dir=os.path.dirname(os.path.abspath(__file__))
@@ -58,14 +60,14 @@ def register_with_orchestrator(orchestrator_ip):
     stub=distributed_pb2_grpc.OrchestratorServiceStub(channel)
     info=distributed_pb2.WorkerInfo(
         worker_id=identity["hardware_id"],
-        ip="127.0.0.1",
+        ip=socket.gethostbyname(socket.gethostname()),
         cores=identity["cpu_cores"],
         ram=identity["ram_gb"]
     )
     try:
         response=stub.RegisterWorker(info)
         if response.ok:
-            print(f"Sucessfully registered worker {info.worker_id} with Orchestrator at {orchestrator_ip}")
+            print(f"Sucessfully registered worker {identity['hardware_id']} with Orchestrator at {orchestrator_ip}")
     except Exception:
         print(f"Failed to register: {Exception}")
 
@@ -82,10 +84,48 @@ def serve():
     except KeyboardInterrupt:
         server.stop(0)
 
+def find_orchestrator():
+    print("Searching for Orchestrator on the network...")
+    client=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+    client.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1)
+    client.bind(("",50005))
+    client.settimeout(1.0)
+    print("Searching for Orchestrator... (Press Ctrl+C to stop)")
+
+    while True:
+        try:
+            data, addr = client.recvfrom(1024)
+            message = data.decode()
+    
+            if message.startswith("ORCHESTRATOR:"):
+                orchestrator_ip = message.split(":")[1]
+                print(f"Discovered Orchestrator at: {orchestrator_ip}")
+                return orchestrator_ip
+        except socket.timeout:
+            continue
+        except KeyboardInterrupt:
+            print("Searching for Orchestrator cancelled by user.")
+            return None
+
 if __name__=="__main__":
     identity=get_identity()
     print("worker identity: ")
     print(json.dumps(identity,indent=4))
+    
+    registered=False
+    orchestrator_ip=""
+    while not registered:
+        orchestrator_ip=find_orchestrator()
+        success = register_with_orchestrator(orchestrator_ip)
+        if success:
+            registered=True
+        else:
+            print("Registration failed. Retrying in 5 seconds...\n")
+            time.sleep(5)
+
+    server_thread=threading.Thread(target=serve,daemon=True)
+    server_thread.start()
+    print(f"Server started in background. Listening for tasks from {orchestrator_ip}...\n")
     
     print("Starting live monitoring...\n")
     try:
