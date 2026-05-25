@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package distributed;
+
+// Worker registers with orchestrator
+message WorkerInfo {
+  string worker_id = 1;
+  string ip = 2;
+  int32 cores = 3;
+  int32 ram = 4;
+}
+
+// Orchestrator sends task to worker
+message TaskPayload {
+  string job_id = 1;
+  string shard_index = 2;
+  bytes script = 3;
+  bytes data_shard = 4;
+}
+
+// Worker sends result back
+message TaskResult {
+  string job_id = 1;
+  string worker_id = 2;
+  string shard_index = 3;
+  bytes result_data = 4;
+  bool success = 5;
+  string error_message = 6;
+}
+
+// Heartbeat
+message HeartbeatRequest {
+  string worker_id = 1;
+}
+
+message HeartbeatResponse {
+  bool acknowledged = 1;
+}
+
+// Simple acknowledgement
+message Ack {
+  bool ok = 1;
+}
+
+// Runs on WORKER — orchestrator calls this
+service WorkerService {
+  rpc ExecuteTask(TaskPayload) returns (TaskResult);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// Runs on ORCHESTRATOR — worker calls this to register
+service OrchestratorService {
+  rpc RegisterWorker(WorkerInfo) returns (Ack);
+}
