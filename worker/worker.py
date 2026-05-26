@@ -1,5 +1,6 @@
 import uuid
 import platform
+import requests
 import grpc
 import psutil
 import time
@@ -56,7 +57,7 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
 
 def register_with_orchestrator(orchestrator_ip):
     identity=get_identity()
-    channel=grpc.insecure_channel(f'{orchestrator_ip}:50051')
+    channel=grpc.insecure_channel(f'{orchestrator_ip}:50060')
     stub=distributed_pb2_grpc.OrchestratorServiceStub(channel)
     info=distributed_pb2.WorkerInfo(
         worker_id=identity["hardware_id"],
@@ -68,14 +69,16 @@ def register_with_orchestrator(orchestrator_ip):
         response=stub.RegisterWorker(info)
         if response.ok:
             print(f"Sucessfully registered worker {identity['hardware_id']} with Orchestrator at {orchestrator_ip}")
-    except Exception:
-        print(f"Failed to register: {Exception}")
+            return True
+    except Exception as e:
+        print(f"Failed to register: {e}")
+        return False
 
 def serve():
     server=grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    distributed_pb2_grpc.add_OrchestratorServiceServicer_to_server(WorkerService(),server)
-    server.add_insecure_port('[::]:50051')
-    print("Worker grpc server starting on port 50051...\n ")
+    distributed_pb2_grpc.add_WorkerServiceServicer_to_server(WorkerService(),server)
+    server.add_insecure_port('[::]:50052')
+    print("Worker grpc server starting on port 50052...\n ")
     server.start()
 
     try:
@@ -112,28 +115,37 @@ if __name__=="__main__":
     print("worker identity: ")
     print(json.dumps(identity,indent=4))
     
-    registered=False
-    orchestrator_ip=""
-    while not registered:
-        orchestrator_ip=find_orchestrator()
-        success = register_with_orchestrator(orchestrator_ip)
-        if success:
-            registered=True
-        else:
-            print("Registration failed. Retrying in 5 seconds...\n")
-            time.sleep(5)
-
     server_thread=threading.Thread(target=serve,daemon=True)
     server_thread.start()
-    print(f"Server started in background. Listening for tasks from {orchestrator_ip}...\n")
-    
-    print("Starting live monitoring...\n")
-    try:
-        print("Press Ctrl+C to stop monitoring.")
-        while True:
-            vitals=get_vitals()
-            packet={**identity,**vitals}
-            print(f"Reporting: CPU {packet['cpu_percent']}% | RAM {packet['ram_percent']}%\n")
-            time.sleep(4)
-    except KeyboardInterrupt:
-        print("Worker stopped.")
+
+    while True:
+        orchestrator_ip=find_orchestrator()
+        if orchestrator_ip:
+            if register_with_orchestrator(orchestrator_ip):
+                print(f"Monitoring vitals...\n")
+                
+                try:
+                    while True:
+                        vitals = get_vitals()
+                        packet = {**identity, **vitals}                        
+                        try:
+                            heartbeat_url = f"http://{orchestrator_ip}:8000/heartbeat"
+                            response = requests.post(heartbeat_url, json=packet, timeout=2)
+                            if response.status_code == 200:
+                                status_msg = "200 OK"
+                            else:
+                                status_msg = f"ERR:{response.status_code}"
+                        except Exception as err:
+                            status_msg = "OFFLINE"
+                        print(f"[{status_msg}] Orchestrator: {orchestrator_ip} | CPU: {vitals['cpu_percent']}% | RAM: {vitals['ram_percent']}%    ", end="\r", flush=True)
+                except KeyboardInterrupt:
+                    print("Worker stopping...\n")
+                    sys.exit(0)
+                except Exception as e:
+                    print(f"Connection lost to Orchestrator: {e}")
+                    print("Retrying...\n")
+                    time.sleep(2)
+                    break
+        else:
+            print("Orchestrator not found. Retrying...\n")
+            time.sleep(2)
