@@ -9,6 +9,7 @@ import os
 import sys
 import socket
 import threading
+import subprocess
 from concurrent import futures
 
 current_dir=os.path.dirname(os.path.abspath(__file__))
@@ -41,19 +42,75 @@ def get_vitals():
 
 class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
     def ExecuteTask(self,request,context):
-        print(f"[TASK] Recieved Job: {request.job_id} | Shard: {request.shard_index}")
-        return distributed_pb2.TaskResult(
-            job_id=request.job_id,
-            worker_id=hex(uuid.getnode()),
-            shard_index=request.shard_index,
-            success=True,
-            #implementation not done yet
-            result="Task Successful"
-        )
+        job_id=request.job_id
+        shard_ind=request.shard_index
+        print(f"[TASK] Recieved Job: {job_id} | Shard: {shard_ind}\n")
+        
+        script_file=f"task_{job_id}_{shard_ind}.py"
+        data_file=f"data_{job_id}_{shard_ind}.bin"
+
+        with open(script_file,"wb") as file:
+            file.write(request.script)
+        
+        with open(data_file,"wb") as file:
+            file.write(request.data_shard)
+
+        try:
+            result=subprocess.run([sys.executable,script_file,data_file],
+                                  capture_output=True,
+                                  text=True,
+                                  timeout=30)
+            if result.returncode==0:
+                print(f"[SUCCESS] Shard {shard_ind} completed.")
+                return distributed_pb2.TaskResult(job_id=request.job_id,
+                                                  worker_id=hex(uuid.getnode()),
+                                                  shard_index=shard_ind,
+                                                  success=True,
+                                                  result_data=result.stdout.encode(),
+                                                  error_message="")
+            else:
+                print(f"[ERROR] Shard {shard_ind} unsuccessful.")
+                return distributed_pb2.TaskResult(job_id=request.job_id,
+                                                  worker_id=hex(uuid.getnode()),
+                                                  shard_index=shard_ind,
+                                                  success=False,
+                                                  result_data=b"",
+                                                  error_message=result.stderr) 
+        except subprocess.TimeoutExpired:
+            print(f"[TIMEOUT] Shard {shard_ind} timed out.")
+            return distributed_pb2.TaskResult(job_id=request.job_id,
+                                              worker_id=hex(uuid.getnode()),
+                                              shard_index=shard_ind,
+                                              success=False,
+                                              result_data=b"",
+                                              error_message="Task timed out.")
+        except Exception as e:
+            return distributed_pb2.TaskResult(job_id=request.job_id,
+                                              worker_id=hex(uuid.getnode()),
+                                              shard_index=shard_ind,
+                                              success=False,
+                                              result_data=b"",
+                                              error_message=str(e))
+        finally:
+            if os.path.exists(script_file):
+                os.remove(script_file)
+            if os.path.exists(data_file):
+                os.remove(data_file)
     
     def Heartbeat(self,request,context):
         print(f"Heartbeat checked\n")
         return distributed_pb2.HeartbeatResponse(acknowledged=True)
+
+def get_local_ip():
+    s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+    try:
+        s.connect('8.8.8.8',1)
+        ip=s.getsockname()[0]
+    except Exception:
+        ip='127.0.0.1'
+    finally:
+        s.close()
+    return ip
 
 def register_with_orchestrator(orchestrator_ip):
     identity=get_identity()
@@ -61,7 +118,7 @@ def register_with_orchestrator(orchestrator_ip):
     stub=distributed_pb2_grpc.OrchestratorServiceStub(channel)
     info=distributed_pb2.WorkerInfo(
         worker_id=identity["hardware_id"],
-        ip=socket.gethostbyname(socket.gethostname()),
+        ip=get_local_ip(),
         cores=identity["cpu_cores"],
         ram=identity["ram_gb"]
     )
