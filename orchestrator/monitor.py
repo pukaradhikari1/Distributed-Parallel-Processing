@@ -14,8 +14,7 @@ async def monitor_workers():
                     print(f"Worker {worker_id} went offline")
 
                 worker['status'] = 'offline'
-
-                # Reassignment logic
+#reass
                 for job_id, job in jobs.items():
                     if (
                         job['worker_id'] == worker_id
