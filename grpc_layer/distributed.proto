@@ -16,6 +16,7 @@ message TaskPayload {
   string shard_index = 2;
   bytes script = 3;
   bytes data_shard = 4;
+  bytes model_weights = 5;
 }
 
 // Worker sends result back
@@ -26,6 +27,7 @@ message TaskResult {
   bytes result_data = 4;
   bool success = 5;
   string error_message = 6;
+  float loss = 7;
 }
 
 // Heartbeat

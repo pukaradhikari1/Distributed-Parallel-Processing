@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11\x64istributed.proto\x12\x0b\x64istributed\"G\n\nWorkerInfo\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\n\n\x02ip\x18\x02 \x01(\t\x12\r\n\x05\x63ores\x18\x03 \x01(\x05\x12\x0b\n\x03ram\x18\x04 \x01(\x05\"V\n\x0bTaskPayload\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x13\n\x0bshard_index\x18\x02 \x01(\t\x12\x0e\n\x06script\x18\x03 \x01(\x0c\x12\x12\n\ndata_shard\x18\x04 \x01(\x0c\"\x81\x01\n\nTaskResult\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x13\n\x0bshard_index\x18\x03 \x01(\t\x12\x13\n\x0bresult_data\x18\x04 \x01(\x0c\x12\x0f\n\x07success\x18\x05 \x01(\x08\x12\x15\n\rerror_message\x18\x06 \x01(\t\"%\n\x10HeartbeatRequest\x12\x11\n\tworker_id\x18\x01 \x01(\t\")\n\x11HeartbeatResponse\x12\x14\n\x0c\x61\x63knowledged\x18\x01 \x01(\x08\"\x11\n\x03\x41\x63k\x12\n\n\x02ok\x18\x01 \x01(\x08\x32\x9d\x01\n\rWorkerService\x12@\n\x0b\x45xecuteTask\x12\x18.distributed.TaskPayload\x1a\x17.distributed.TaskResult\x12J\n\tHeartbeat\x12\x1d.distributed.HeartbeatRequest\x1a\x1e.distributed.HeartbeatResponse2R\n\x13OrchestratorService\x12;\n\x0eRegisterWorker\x12\x17.distributed.WorkerInfo\x1a\x10.distributed.Ackb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11\x64istributed.proto\x12\x0b\x64istributed\"G\n\nWorkerInfo\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\n\n\x02ip\x18\x02 \x01(\t\x12\r\n\x05\x63ores\x18\x03 \x01(\x05\x12\x0b\n\x03ram\x18\x04 \x01(\x05\"m\n\x0bTaskPayload\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x13\n\x0bshard_index\x18\x02 \x01(\t\x12\x0e\n\x06script\x18\x03 \x01(\x0c\x12\x12\n\ndata_shard\x18\x04 \x01(\x0c\x12\x15\n\rmodel_weights\x18\x05 \x01(\x0c\"\x8f\x01\n\nTaskResult\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x13\n\x0bshard_index\x18\x03 \x01(\t\x12\x13\n\x0bresult_data\x18\x04 \x01(\x0c\x12\x0f\n\x07success\x18\x05 \x01(\x08\x12\x15\n\rerror_message\x18\x06 \x01(\t\x12\x0c\n\x04loss\x18\x07 \x01(\x02\"%\n\x10HeartbeatRequest\x12\x11\n\tworker_id\x18\x01 \x01(\t\")\n\x11HeartbeatResponse\x12\x14\n\x0c\x61\x63knowledged\x18\x01 \x01(\x08\"\x11\n\x03\x41\x63k\x12\n\n\x02ok\x18\x01 \x01(\x08\x32\x9d\x01\n\rWorkerService\x12@\n\x0b\x45xecuteTask\x12\x18.distributed.TaskPayload\x1a\x17.distributed.TaskResult\x12J\n\tHeartbeat\x12\x1d.distributed.HeartbeatRequest\x1a\x1e.distributed.HeartbeatResponse2R\n\x13OrchestratorService\x12;\n\x0eRegisterWorker\x12\x17.distributed.WorkerInfo\x1a\x10.distributed.Ackb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,17 +34,17 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_WORKERINFO']._serialized_start=34
   _globals['_WORKERINFO']._serialized_end=105
   _globals['_TASKPAYLOAD']._serialized_start=107
-  _globals['_TASKPAYLOAD']._serialized_end=193
-  _globals['_TASKRESULT']._serialized_start=196
-  _globals['_TASKRESULT']._serialized_end=325
-  _globals['_HEARTBEATREQUEST']._serialized_start=327
-  _globals['_HEARTBEATREQUEST']._serialized_end=364
-  _globals['_HEARTBEATRESPONSE']._serialized_start=366
-  _globals['_HEARTBEATRESPONSE']._serialized_end=407
-  _globals['_ACK']._serialized_start=409
-  _globals['_ACK']._serialized_end=426
-  _globals['_WORKERSERVICE']._serialized_start=429
-  _globals['_WORKERSERVICE']._serialized_end=586
-  _globals['_ORCHESTRATORSERVICE']._serialized_start=588
-  _globals['_ORCHESTRATORSERVICE']._serialized_end=670
+  _globals['_TASKPAYLOAD']._serialized_end=216
+  _globals['_TASKRESULT']._serialized_start=219
+  _globals['_TASKRESULT']._serialized_end=362
+  _globals['_HEARTBEATREQUEST']._serialized_start=364
+  _globals['_HEARTBEATREQUEST']._serialized_end=401
+  _globals['_HEARTBEATRESPONSE']._serialized_start=403
+  _globals['_HEARTBEATRESPONSE']._serialized_end=444
+  _globals['_ACK']._serialized_start=446
+  _globals['_ACK']._serialized_end=463
+  _globals['_WORKERSERVICE']._serialized_start=466
+  _globals['_WORKERSERVICE']._serialized_end=623
+  _globals['_ORCHESTRATORSERVICE']._serialized_start=625
+  _globals['_ORCHESTRATORSERVICE']._serialized_end=707
 # @@protoc_insertion_point(module_scope)
