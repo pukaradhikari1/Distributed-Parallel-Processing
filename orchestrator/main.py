@@ -1,7 +1,7 @@
 import os
 import asyncio
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 
 from models import Worker, Heartbeat
 from workers import workers, register_worker, update_heartbeat, get_available_worker
@@ -13,6 +13,7 @@ app = FastAPI()
 
 @app.on_event('startup')
 async def startup_event():
+    
     asyncio.create_task(monitor_workers())
 
 @app.get('/')
@@ -29,13 +30,44 @@ def register(worker: Worker):
 
 @app.post('/heartbeat')
 def heartbeat(data: Heartbeat):
-    success = update_heartbeat(data.worker_id)
+    success = update_heartbeat(data)
     if not success:
         raise HTTPException(status_code=404, detail='Worker not found')
     return {'message': 'Heartbeat received'}
 
+
+def dispatch_job_background(job_id: str, worker_id: str, file_contents: bytes):
+    """Background task to send the gRPC payload so the API doesn't freeze."""
+    worker_ip = workers[worker_id]['ip']
+    
+    
+    worker_address = f"{worker_ip}:50052"
+
+    try:
+        response = send_task_to_worker(
+            worker_address=worker_address,
+            job_id=job_id,
+            shard_index=0,
+            script_bytes=file_contents,  
+            data_bytes=b""               
+        )
+
+        if response.success:
+            result = response.result_data.decode('utf-8')
+            complete_job(job_id, result)
+        else:
+            fail_job(job_id, response.error_message)
+
+    except Exception as e:
+        fail_job(job_id, str(e))
+    finally:
+        
+        if worker_id in workers:
+            workers[worker_id]['current_job'] = None
+
+
 @app.post('/submit-job')
-async def submit_job(file: UploadFile = File(...)):
+async def submit_job(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     os.makedirs('uploads', exist_ok=True)
 
     contents = await file.read()
@@ -44,7 +76,10 @@ async def submit_job(file: UploadFile = File(...)):
     with open(file_path, 'wb') as f:
         f.write(contents)
 
+    
     job_id = create_job(file.filename)
+    
+    
     worker_id = get_available_worker()
 
     if not worker_id:
@@ -52,57 +87,23 @@ async def submit_job(file: UploadFile = File(...)):
             'job_id': job_id,
             'status': 'queued',
             'assigned_worker': None,
-            'message': 'No worker available right now'
+            'message': 'No worker available right now. Saved to queue.'
         }
 
+    # 3. Assign the job to the worker in the registry
     assign_job(job_id, worker_id)
     workers[worker_id]['current_job'] = job_id
 
-    worker_address = workers[worker_id]['ip']
+    
+    background_tasks.add_task(dispatch_job_background, job_id, worker_id, contents)
 
-    try:
-        response = send_task_to_worker(
-            worker_address=worker_address,
-            job_id=job_id,
-            shard_index=0,
-            script_bytes=b'process_file',
-            data_bytes=contents
-        )
-
-        if response.success:
-            result = response.result_data.decode('utf-8')
-            complete_job(job_id, result)
-
-            workers[worker_id]['current_job'] = None
-
-            return {
-                'job_id': job_id,
-                'status': 'completed',
-                'assigned_worker': worker_id,
-                'result': result
-            }
-
-        else:
-            fail_job(job_id, response.error_message)
-            workers[worker_id]['current_job'] = None
-
-            return {
-                'job_id': job_id,
-                'status': 'failed',
-                'assigned_worker': worker_id,
-                'error': response.error_message
-            }
-
-    except Exception as e:
-        fail_job(job_id, str(e))
-        workers[worker_id]['current_job'] = None
-
-        return {
-            'job_id': job_id,
-            'status': 'failed',
-            'assigned_worker': worker_id,
-            'error': str(e)
-        }
+    
+    return {
+        'job_id': job_id,
+        'status': 'running',
+        'assigned_worker': worker_id,
+        'message': 'Job dispatched in the background'
+    }
 
 @app.get('/workers')
 def list_workers():
