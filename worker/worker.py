@@ -10,6 +10,7 @@ import sys
 import socket
 import threading
 import subprocess
+import re
 from concurrent import futures
 
 current_dir=os.path.dirname(os.path.abspath(__file__))
@@ -44,22 +45,37 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
     def ExecuteTask(self,request,context):
         job_id=request.job_id
         shard_ind=request.shard_index
+        script_code=request.script
+        input_data=request.data_shard
         print(f"[TASK] Recieved Job: {job_id} | Shard: {shard_ind}\n")
         
         script_file=f"task_{job_id}_{shard_ind}.py"
         data_file=f"data_{job_id}_{shard_ind}.bin"
+        weight_file=f"weights_{job_id}_{shard_ind}.bin"
 
         with open(script_file,"wb") as file:
             file.write(request.script)
         
         with open(data_file,"wb") as file:
             file.write(request.data_shard)
+          
+        with open(weight_file,"wb") as file:
+            file.write(request.model_weights)
 
         try:
-            result=subprocess.run([sys.executable,script_file,data_file],
+            result=subprocess.run([sys.executable,script_file,data_file,weight_file],
                                   capture_output=True,
                                   text=True,
                                   timeout=30)
+            
+            loss_val=0.0
+            try:
+                match=re.search(r"LOSS:\s*([\d.])+)",result.stdout,re.IGNORECASE)
+                if match:
+                    loss_val=float(match.group(1))
+            except:
+                pass
+
             if result.returncode==0:
                 print(f"[SUCCESS] Shard {shard_ind} completed.")
                 return distributed_pb2.TaskResult(job_id=request.job_id,
@@ -67,7 +83,8 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
                                                   shard_index=shard_ind,
                                                   success=True,
                                                   result_data=result.stdout.encode(),
-                                                  error_message="")
+                                                  error_message="",
+                                                  loss=loss_val)
             else:
                 print(f"[ERROR] Shard {shard_ind} unsuccessful.")
                 return distributed_pb2.TaskResult(job_id=request.job_id,
@@ -75,7 +92,8 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
                                                   shard_index=shard_ind,
                                                   success=False,
                                                   result_data=b"",
-                                                  error_message=result.stderr) 
+                                                  error_message=result.stderr,
+                                                  loss=loss_val) 
         except subprocess.TimeoutExpired:
             print(f"[TIMEOUT] Shard {shard_ind} timed out.")
             return distributed_pb2.TaskResult(job_id=request.job_id,
@@ -83,19 +101,23 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
                                               shard_index=shard_ind,
                                               success=False,
                                               result_data=b"",
-                                              error_message="Task timed out.")
+                                              error_message="Task timed out.",
+                                              loss=loss_val)
         except Exception as e:
             return distributed_pb2.TaskResult(job_id=request.job_id,
                                               worker_id=hex(uuid.getnode()),
                                               shard_index=shard_ind,
                                               success=False,
                                               result_data=b"",
-                                              error_message=str(e))
+                                              error_message=str(e),
+                                              loss=loss_val)
         finally:
             if os.path.exists(script_file):
                 os.remove(script_file)
             if os.path.exists(data_file):
                 os.remove(data_file)
+            if os.path.exists(weight_file):
+                os.remove(weight_file)
     
     def Heartbeat(self,request,context):
         print(f"Heartbeat checked\n")
@@ -104,7 +126,7 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
 def get_local_ip():
     s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
     try:
-        s.connect('8.8.8.8',1)
+        s.connect('8.8.8.8',80)
         ip=s.getsockname()[0]
     except Exception:
         ip='127.0.0.1'
