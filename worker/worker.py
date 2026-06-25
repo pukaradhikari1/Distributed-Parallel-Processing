@@ -34,10 +34,21 @@ def get_identity():
         "ram_gb":int(psutil.virtual_memory().total/(1024**3))
     }
 
+def get_gpu_vitals():
+    try:
+        cmd="nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader,nounits"
+        result=subprocess.check_output(cmd,shell=True).decode().strip()
+        gpu_load,gpu_mem=result.split(',')
+        return {"gpu_load":float(gpu_load),"gpu_mem":float(gpu_mem)}
+    except:
+        return {"gpu_load":0.0,"gpu_mem":0.0}
+    
 def get_vitals():
+    gpu=get_gpu_vitals()
     return{
         "cpu_percent":psutil.cpu_percent(interval=1),
         "ram_percent":psutil.virtual_memory().percent,
+        "gpu_percent":gpu["gpu_load"],
         "timestamp":time.time()
     }
 
