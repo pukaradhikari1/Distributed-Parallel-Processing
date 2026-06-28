@@ -20,4 +20,5 @@ class Heartbeat(BaseModel):
     ram_gb: Optional[int] = None
     cpu_percent: Optional[float] = None
     ram_percent: Optional[float] = None
+    gpu_percent: Optional[float] = None  # <-- Added for the Android UI
     timestamp: Optional[float] = None

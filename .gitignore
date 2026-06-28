@@ -4,3 +4,7 @@ __pycache__/
 *.pyd
 
 dpp_venv/
+venv/
+.venv/
+machine_learning/archive/
+machine_learning/models/
