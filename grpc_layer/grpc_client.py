@@ -87,7 +87,7 @@ if __name__ == "__main__":
     test_weights = b"fake_model_weights_bytes"
 
     result = send_task_to_worker(
-        worker_ip="127.0.0.1",
+        worker_ip="172.31.138.172",
         job_id="test-job-001",
         shard_index=0,
         script_bytes=test_script,
