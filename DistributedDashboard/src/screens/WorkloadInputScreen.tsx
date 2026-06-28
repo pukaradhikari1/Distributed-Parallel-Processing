@@ -1,26 +1,29 @@
 // src/screens/WorkloadInputScreen.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, FlatList, StyleSheet, View } from 'react-native';
-import { Button, Card, SegmentedButtons, Snackbar, Text, TextInput } from 'react-native-paper';
+import {
+  Button,
+  Card,
+  Snackbar,
+  Text,
+  TextInput,
+} from 'react-native-paper';
 import { useClusterStore } from '../store/useClusterStore';
 import StatusChip from '../components/StatusChip';
 import EmptyState from '../components/EmptyState';
 
-const WORKLOAD_TYPES = [
-  { value: 'matrix-multiply', label: 'Matrix' },
-  { value: 'image-processing', label: 'Image' },
-  { value: 'data-aggregation', label: 'Data Agg' },
-];
-
+// ── Animated workload list card ───────────────────────────────────────────────
 function AnimatedWorkloadCard({ item, index }: { item: any; index: number }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(16)).current;
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(opacity, { toValue: 1, duration: 300, delay: index * 55, useNativeDriver: true }),
       Animated.timing(translateY, { toValue: 0, duration: 300, delay: index * 55, useNativeDriver: true }),
     ]).start();
   }, []);
+
   return (
     <Animated.View style={[styles.itemCard, { opacity, transform: [{ translateY }] }]}>
       <Card mode="contained">
@@ -38,15 +41,19 @@ function AnimatedWorkloadCard({ item, index }: { item: any; index: number }) {
   );
 }
 
+// ── Main screen ───────────────────────────────────────────────────────────────
 export default function WorkloadInputScreen() {
   const { workloads, fetchWorkloads, submitWorkload } = useClusterStore();
-  const [name, setName] = useState('');
-  const [type, setType] = useState(WORKLOAD_TYPES[0].value);
-  const [payload, setPayload] = useState('');
-  const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal');
+
+  const [jobName, setJobName] = useState('');
+  const [pyFilePath, setPyFilePath] = useState('');
+  const [zipFilePath, setZipFilePath] = useState('');
+  const [zipNotes, setZipNotes] = useState('');
+  const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
+  // Slide-in animation
   const formOpacity = useRef(new Animated.Value(0)).current;
   const formTranslateY = useRef(new Animated.Value(28)).current;
 
@@ -58,17 +65,36 @@ export default function WorkloadInputScreen() {
     ]).start();
   }, []);
 
+  const canSubmit = !submitting && jobName.trim() && pyFilePath.trim();
+
   const handleSubmit = async () => {
-    if (!name.trim() || !payload.trim()) return;
+    if (!canSubmit) return;
     setSubmitting(true);
-    const result = await submitWorkload({ name: name.trim(), type, payload: payload.trim(), priority });
+
+    const payload = JSON.stringify({
+      py_file: pyFilePath.trim(),
+      zip_file: zipFilePath.trim(),
+      zip_notes: zipNotes.trim(),
+      notes: notes.trim(),
+    });
+
+    const result = await submitWorkload({
+      name: jobName.trim(),
+      type: 'python-script',
+      payload,
+      priority: 'normal',
+    });
+
     setSubmitting(false);
     if (result) {
-      setSnackbar(`Workload "${result.name}" submitted`);
-      setName('');
-      setPayload('');
+      setSnackbar(`Job "${result.name}" submitted`);
+      setJobName('');
+      setPyFilePath('');
+      setZipFilePath('');
+      setZipNotes('');
+      setNotes('');
     } else {
-      setSnackbar('Failed to submit workload');
+      setSnackbar('Failed to submit job');
     }
   };
 
@@ -77,52 +103,119 @@ export default function WorkloadInputScreen() {
       <FlatList
         data={workloads}
         keyExtractor={item => item.id}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 48 }}
         ListHeaderComponent={
           <Animated.View style={{ opacity: formOpacity, transform: [{ translateY: formTranslateY }] }}>
-            <Card style={styles.formCard} mode="contained">
+
+            {/* ── Job name ── */}
+            <Card style={styles.card} mode="contained">
+              <Card.Title title="Job Details" titleVariant="titleMedium" />
               <Card.Content>
-                <Text variant="titleMedium" style={styles.sectionTitle}>New Workload</Text>
-                <TextInput label="Name" value={name} onChangeText={setName} mode="outlined" style={styles.input} left={<TextInput.Icon icon="tag-outline" />} />
-                <Text variant="labelLarge" style={styles.label}>Type</Text>
-                <SegmentedButtons value={type} onValueChange={setType} buttons={WORKLOAD_TYPES} style={styles.input} />
                 <TextInput
-                  label="Payload (JSON or text)"
-                  value={payload}
-                  onChangeText={setPayload}
+                  label="Job name"
+                  value={jobName}
+                  onChangeText={setJobName}
                   mode="outlined"
-                  multiline
-                  numberOfLines={4}
                   style={styles.input}
-                  left={<TextInput.Icon icon="code-braces" />}
+                  left={<TextInput.Icon icon="tag-outline" />}
+                  placeholder="e.g. Training run batch 12"
                 />
-                <Text variant="labelLarge" style={styles.label}>Priority</Text>
-                <SegmentedButtons
-                  value={priority}
-                  onValueChange={v => setPriority(v as typeof priority)}
-                  buttons={[
-                    { value: 'low', label: 'Low' },
-                    { value: 'normal', label: 'Normal' },
-                    { value: 'high', label: 'High' },
-                  ]}
-                  style={styles.input}
-                />
-                <Button
-                  mode="contained"
-                  onPress={handleSubmit}
-                  loading={submitting}
-                  disabled={submitting || !name.trim() || !payload.trim()}
-                  icon="send"
-                >
-                  Submit Workload
-                </Button>
               </Card.Content>
             </Card>
+
+            {/* ── Python file ── */}
+            <Card style={styles.card} mode="contained">
+              <Card.Title title="Python Script" titleVariant="titleMedium" />
+              <Card.Content>
+                <TextInput
+                  label=".py file path"
+                  value={pyFilePath}
+                  onChangeText={setPyFilePath}
+                  mode="outlined"
+                  style={styles.input}
+                  left={<TextInput.Icon icon="language-python" />}
+                  placeholder="e.g. /scripts/train.py or s3://bucket/job.py"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </Card.Content>
+            </Card>
+
+            {/* ── ZIP images (optional) ── */}
+            <Card style={styles.card} mode="contained">
+              <Card.Title title="Image Dataset (optional)" titleVariant="titleMedium" />
+              <Card.Content>
+                <TextInput
+                  label=".zip file path"
+                  value={zipFilePath}
+                  onChangeText={setZipFilePath}
+                  mode="outlined"
+                  style={styles.input}
+                  left={<TextInput.Icon icon="folder-zip-outline" />}
+                  placeholder="e.g. /data/images.zip or s3://bucket/batch.zip"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TextInput
+                  label="Image dataset notes (optional)"
+                  value={zipNotes}
+                  onChangeText={setZipNotes}
+                  mode="outlined"
+                  multiline
+                  numberOfLines={3}
+                  style={styles.input}
+                  left={<TextInput.Icon icon="image-multiple-outline" />}
+                  placeholder="e.g. Contains 1 200 satellite crops, RGB, 256×256 px…"
+                />
+              </Card.Content>
+            </Card>
+
+            {/* ── Notes (optional) ── */}
+            <Card style={styles.card} mode="contained">
+              <Card.Title title="Notes (optional)" titleVariant="titleMedium" />
+              <Card.Content>
+                <TextInput
+                  label="Additional context or instructions"
+                  value={notes}
+                  onChangeText={setNotes}
+                  mode="outlined"
+                  multiline
+                  numberOfLines={3}
+                  style={styles.input}
+                  left={<TextInput.Icon icon="note-text-outline" />}
+                  placeholder="e.g. Run with GPU node, skip validation step…"
+                />
+              </Card.Content>
+            </Card>
+
+            {/* ── Submit ── */}
+            <View style={styles.submitRow}>
+              <Button
+                mode="contained"
+                onPress={handleSubmit}
+                loading={submitting}
+                disabled={!canSubmit}
+                icon="send"
+                style={styles.submitBtn}
+                contentStyle={styles.submitContent}
+              >
+                Submit Job
+              </Button>
+            </View>
+
           </Animated.View>
         }
-        ListEmptyComponent={<EmptyState title="No workloads yet" subtitle="Submit one above to get started" />}
-        renderItem={({ item, index }) => <AnimatedWorkloadCard item={item} index={index} />}
+        ListEmptyComponent={
+          <EmptyState
+            title="No jobs yet"
+            subtitle="Submit a Python script above to get started"
+          />
+        }
+        renderItem={({ item, index }) => (
+          <AnimatedWorkloadCard item={item} index={index} />
+        )}
       />
+
       <Snackbar visible={!!snackbar} onDismiss={() => setSnackbar(null)} duration={2500}>
         {snackbar}
       </Snackbar>
@@ -132,11 +225,12 @@ export default function WorkloadInputScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  formCard: { margin: 16, marginBottom: 8 },
-  sectionTitle: { marginBottom: 12 },
-  label: { marginBottom: 6, marginTop: 4 },
-  input: { marginBottom: 14 },
+  card: { margin: 16, marginBottom: 0, marginTop: 16 },
+  input: { marginBottom: 8 },
+  subtle: { opacity: 0.6 },
+  submitRow: { margin: 16, marginTop: 20 },
+  submitBtn: { borderRadius: 10 },
+  submitContent: { paddingVertical: 6 },
   itemCard: { marginHorizontal: 16, marginVertical: 6 },
   itemRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  subtle: { opacity: 0.6, marginTop: 2 },
 });
