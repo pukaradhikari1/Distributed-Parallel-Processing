@@ -3,6 +3,12 @@ import sys
 import platform
 import shutil
 
+#navigate to worker folder in terminal
+# 1) chmod +x uninstall_worker.sh
+# 2) sudo python3 uninstall.py
+
+# to verify if the worker service is removed:
+# sudo systemctl status worker 
 def uninstall_linux():
     print("--- Linux Cleanup (Systemd & Autostart) ---")
     

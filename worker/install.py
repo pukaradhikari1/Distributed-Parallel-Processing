@@ -1,6 +1,12 @@
 import os
 import platform
 
+#navigate to worker folder in terminal
+# 1) chmod +x install_worker.sh
+# 2) sudo python3 install.py
+
+# to verify if the worker is running in the background:
+# sudo systemctl status worker 
 def setup_linux():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sh_path = os.path.abspath(os.path.join(current_dir, "install_worker.sh"))
@@ -8,21 +14,21 @@ def setup_linux():
 
     # Define the Service File
     service_content = f"""[Unit]
-    Description=Distributed Worker Node
-    After=network-online.target
-    Wants=network-online.target
+Description=Distributed Worker Node
+After=network-online.target
+Wants=network-online.target
 
-    [Service]
-    Type=simple
-    User={user}
-    WorkingDirectory={current_dir}
-    ExecStart=/bin/bash {sh_path}
-    Restart=always
-    RestartSec=10
+[Service]
+Type=simple
+User={user}
+WorkingDirectory={current_dir}
+ExecStart=/bin/bash {sh_path}
+Restart=always
+RestartSec=10
 
-    [Install]
-    WantedBy=multi-user.target
-    """
+[Install]
+WantedBy=multi-user.target
+"""
     
     # Save the service file
     service_path = "/tmp/worker.service"

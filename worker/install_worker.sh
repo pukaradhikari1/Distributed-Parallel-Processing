@@ -38,7 +38,7 @@ source venv/bin/activate
 # 5. Install/Update dependencies inside the venv
 echo "Checking dependencies..."
 pip install --upgrade pip
-pip install -r requirements.txt --quiet
+pip install -r ../requirements.txt --quiet
 
 # 6. Run the Worker
 while true; do
@@ -50,3 +50,4 @@ while true; do
     echo"Press Ctrl+C to stop."
     sleep 10
 done
+
