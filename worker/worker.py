@@ -147,21 +147,24 @@ def get_local_ip():
 
 def register_with_orchestrator(orchestrator_ip):
     identity=get_identity()
-    channel=grpc.insecure_channel(f'{orchestrator_ip}:50060')
-    stub=distributed_pb2_grpc.OrchestratorServiceStub(channel)
-    info=distributed_pb2.WorkerInfo(
-        worker_id=identity["hardware_id"],
-        ip=get_local_ip(),
-        cores=identity["cpu_cores"],
-        ram=identity["ram_gb"]
-    )
+    
+    # REST API Payload matching the Orchestrator's 'Worker' model
+    payload = {
+        "worker_id": identity["hardware_id"],
+        "ip": get_local_ip(),
+        "cores": identity["cpu_cores"],
+        "ram": identity["ram_gb"]
+    }
+    
     try:
-        response=stub.RegisterWorker(info)
-        if response.ok:
-            print(f"Sucessfully registered worker {identity['hardware_id']} with Orchestrator at {orchestrator_ip}")
+        register_url = f"http://{orchestrator_ip}:8000/register-worker"
+        response = requests.post(register_url, json=payload, timeout=5)
+        if response.status_code == 200:
+            print(f"Successfully registered worker {identity['hardware_id']} with Orchestrator!")
             return True
+        return False
     except Exception as e:
-        print(f"Failed to register: {e}")
+        print(f"Failed to connect to Orchestrator for registration: {e}")
         return False
 
 def serve():
