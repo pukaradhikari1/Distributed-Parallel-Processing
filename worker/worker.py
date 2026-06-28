@@ -217,24 +217,23 @@ if __name__=="__main__":
                 try:
                     while True:
                         vitals = get_vitals()
-                        packet = {**identity, **vitals}                        
-                        try:
-                            heartbeat_url = f"http://{orchestrator_ip}:8000/heartbeat"
-                            response = requests.post(heartbeat_url, json=packet, timeout=2)
-                            if response.status_code == 200:
-                                status_msg = "200 OK"
-                            else:
-                                status_msg = f"ERR:{response.status_code}"
-                        except Exception as err:
-                            status_msg = "OFFLINE"
-                        print(f"[{status_msg}] Orchestrator: {orchestrator_ip} | CPU: {vitals['cpu_percent']}% | RAM: {vitals['ram_percent']}%    ", end="\r", flush=True)
+                        packet = {**identity, **vitals}                       
+                        heartbeat_url = f"http://{orchestrator_ip}:8000/heartbeat"
+                        response = requests.post(heartbeat_url, json=packet, timeout=2)
+                        
+                        if response.status_code == 200:
+                            print(f"[200 OK] Orchestrator: {orchestrator_ip} | CPU: {vitals['cpu_percent']}% | RAM: {vitals['ram_percent']}%  | GPU: {vitals['gpu_percent']}%    ", end="\r", flush=True)
+                        else:
+                            print(f"\n[!] Server error {response.status_code}. Re-discovering...")
+                            break
+                        time.sleep(4)
                 except KeyboardInterrupt:
                     print("Worker stopping...\n")
                     sys.exit(0)
                 except Exception as e:
                     print(f"Connection lost to Orchestrator: {e}")
                     print("Retrying...\n")
-                    time.sleep(2)
+                    time.sleep(5)
                     break
         else:
             print("Orchestrator not found. Retrying...\n")
