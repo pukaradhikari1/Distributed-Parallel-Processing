@@ -1,9 +1,10 @@
+
 import uuid
 
 jobs = {}
 
-
-def create_job(filename):
+# UPDATED: Now accepts file paths
+def create_job(filename, script_path, data_path=None, weights_path=None):
     job_id = str(uuid.uuid4())
 
     jobs[job_id] = {
@@ -12,10 +13,12 @@ def create_job(filename):
         "status": "queued",
         "worker_id": None,
         "result": None,
-        "error": None
+        "error": None,
+        # NEW: Store the locations on disk
+        "script_path": script_path,
+        "data_path": data_path,
+        "weights_path": weights_path
     }
-
-    return job_id
 
 
 def assign_job(job_id, worker_id):
