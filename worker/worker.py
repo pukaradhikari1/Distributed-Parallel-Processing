@@ -56,8 +56,7 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
     def ExecuteTask(self,request,context):
         job_id=request.job_id
         shard_ind=request.shard_index
-        script_code=request.script
-        input_data=request.data_shard
+
         print(f"[TASK] Recieved Job: {job_id} | Shard: {shard_ind}\n")
         
         script_file=f"task_{job_id}_{shard_ind}.py"
@@ -77,11 +76,11 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
             result=subprocess.run([sys.executable,script_file,data_file,weight_file],
                                   capture_output=True,
                                   text=True,
-                                  timeout=30)
+                                  timeout=290)
             
             loss_val=0.0
             try:
-                match=re.search(r"LOSS:\s*([\d.])+)",result.stdout,re.IGNORECASE)
+                match=re.search(r"LOSS:\s*([\d.]+)",result.stdout,re.IGNORECASE)
                 if match:
                     loss_val=float(match.group(1))
             except:
@@ -168,10 +167,14 @@ def register_with_orchestrator(orchestrator_ip):
         return False
 
 def serve():
-    server=grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    MAX_MESSAGE_LENGTH=500*1024*1024
+    options=[('grpc.max_send_message_length', MAX_MESSAGE_LENGTH),
+             ('grpc.max_receive_message_length', MAX_MESSAGE_LENGTH)]
+    
+    server=grpc.server(futures.ThreadPoolExecutor(max_workers=10),options=options)
     distributed_pb2_grpc.add_WorkerServiceServicer_to_server(WorkerService(),server)
-    server.add_insecure_port('[::]:50052')
-    print("Worker grpc server starting on port 50052...\n ")
+    server.add_insecure_port('[::]:50051')
+    print("Worker grpc server starting on port 50051...\n ")
     server.start()
 
     try:
