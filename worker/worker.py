@@ -10,6 +10,7 @@ import sys
 import socket
 import threading
 import subprocess
+import re
 from concurrent import futures
 
 current_dir=os.path.dirname(os.path.abspath(__file__))
@@ -33,10 +34,21 @@ def get_identity():
         "ram_gb":int(psutil.virtual_memory().total/(1024**3))
     }
 
+def get_gpu_vitals():
+    try:
+        cmd="nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader,nounits"
+        result=subprocess.check_output(cmd,shell=True).decode().strip()
+        gpu_load,gpu_mem=result.split(',')
+        return {"gpu_load":float(gpu_load),"gpu_mem":float(gpu_mem)}
+    except:
+        return {"gpu_load":0.0,"gpu_mem":0.0}
+    
 def get_vitals():
+    gpu=get_gpu_vitals()
     return{
         "cpu_percent":psutil.cpu_percent(interval=1),
         "ram_percent":psutil.virtual_memory().percent,
+        "gpu_percent":gpu["gpu_load"],
         "timestamp":time.time()
     }
 
@@ -44,22 +56,36 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
     def ExecuteTask(self,request,context):
         job_id=request.job_id
         shard_ind=request.shard_index
+
         print(f"[TASK] Recieved Job: {job_id} | Shard: {shard_ind}\n")
         
         script_file=f"task_{job_id}_{shard_ind}.py"
         data_file=f"data_{job_id}_{shard_ind}.bin"
+        weight_file=f"weights_{job_id}_{shard_ind}.bin"
 
         with open(script_file,"wb") as file:
             file.write(request.script)
         
         with open(data_file,"wb") as file:
             file.write(request.data_shard)
+          
+        with open(weight_file,"wb") as file:
+            file.write(request.model_weights)
 
         try:
-            result=subprocess.run([sys.executable,script_file,data_file],
+            result=subprocess.run([sys.executable,script_file,data_file,weight_file],
                                   capture_output=True,
                                   text=True,
-                                  timeout=30)
+                                  timeout=290)
+            
+            loss_val=0.0
+            try:
+                match=re.search(r"LOSS:\s*([\d.]+)",result.stdout,re.IGNORECASE)
+                if match:
+                    loss_val=float(match.group(1))
+            except:
+                pass
+
             if result.returncode==0:
                 print(f"[SUCCESS] Shard {shard_ind} completed.")
                 return distributed_pb2.TaskResult(job_id=request.job_id,
@@ -67,7 +93,8 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
                                                   shard_index=shard_ind,
                                                   success=True,
                                                   result_data=result.stdout.encode(),
-                                                  error_message="")
+                                                  error_message="",
+                                                  loss=loss_val)
             else:
                 print(f"[ERROR] Shard {shard_ind} unsuccessful.")
                 return distributed_pb2.TaskResult(job_id=request.job_id,
@@ -75,7 +102,8 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
                                                   shard_index=shard_ind,
                                                   success=False,
                                                   result_data=b"",
-                                                  error_message=result.stderr) 
+                                                  error_message=result.stderr,
+                                                  loss=loss_val) 
         except subprocess.TimeoutExpired:
             print(f"[TIMEOUT] Shard {shard_ind} timed out.")
             return distributed_pb2.TaskResult(job_id=request.job_id,
@@ -83,19 +111,23 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
                                               shard_index=shard_ind,
                                               success=False,
                                               result_data=b"",
-                                              error_message="Task timed out.")
+                                              error_message="Task timed out.",
+                                              loss=loss_val)
         except Exception as e:
             return distributed_pb2.TaskResult(job_id=request.job_id,
                                               worker_id=hex(uuid.getnode()),
                                               shard_index=shard_ind,
                                               success=False,
                                               result_data=b"",
-                                              error_message=str(e))
+                                              error_message=str(e),
+                                              loss=loss_val)
         finally:
             if os.path.exists(script_file):
                 os.remove(script_file)
             if os.path.exists(data_file):
                 os.remove(data_file)
+            if os.path.exists(weight_file):
+                os.remove(weight_file)
     
     def Heartbeat(self,request,context):
         print(f"Heartbeat checked\n")
@@ -104,7 +136,7 @@ class WorkerService(distributed_pb2_grpc.WorkerServiceServicer):
 def get_local_ip():
     s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
     try:
-        s.connect('8.8.8.8',1)
+        s.connect('8.8.8.8',80)
         ip=s.getsockname()[0]
     except Exception:
         ip='127.0.0.1'
@@ -114,28 +146,35 @@ def get_local_ip():
 
 def register_with_orchestrator(orchestrator_ip):
     identity=get_identity()
-    channel=grpc.insecure_channel(f'{orchestrator_ip}:50060')
-    stub=distributed_pb2_grpc.OrchestratorServiceStub(channel)
-    info=distributed_pb2.WorkerInfo(
-        worker_id=identity["hardware_id"],
-        ip=get_local_ip(),
-        cores=identity["cpu_cores"],
-        ram=identity["ram_gb"]
-    )
+    
+    # REST API Payload matching the Orchestrator's 'Worker' model
+    payload = {
+        "worker_id": identity["hardware_id"],
+        "ip": get_local_ip(),
+        "cores": identity["cpu_cores"],
+        "ram": identity["ram_gb"]
+    }
+    
     try:
-        response=stub.RegisterWorker(info)
-        if response.ok:
-            print(f"Sucessfully registered worker {identity['hardware_id']} with Orchestrator at {orchestrator_ip}")
+        register_url = f"http://{orchestrator_ip}:8000/register-worker"
+        response = requests.post(register_url, json=payload, timeout=5)
+        if response.status_code == 200:
+            print(f"Successfully registered worker {identity['hardware_id']} with Orchestrator!")
             return True
+        return False
     except Exception as e:
-        print(f"Failed to register: {e}")
+        print(f"Failed to connect to Orchestrator for registration: {e}")
         return False
 
 def serve():
-    server=grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    MAX_MESSAGE_LENGTH=500*1024*1024
+    options=[('grpc.max_send_message_length', MAX_MESSAGE_LENGTH),
+             ('grpc.max_receive_message_length', MAX_MESSAGE_LENGTH)]
+    
+    server=grpc.server(futures.ThreadPoolExecutor(max_workers=10),options=options)
     distributed_pb2_grpc.add_WorkerServiceServicer_to_server(WorkerService(),server)
-    server.add_insecure_port('[::]:50052')
-    print("Worker grpc server starting on port 50052...\n ")
+    server.add_insecure_port('[::]:50051')
+    print("Worker grpc server starting on port 50051...\n ")
     server.start()
 
     try:
@@ -184,24 +223,23 @@ if __name__=="__main__":
                 try:
                     while True:
                         vitals = get_vitals()
-                        packet = {**identity, **vitals}                        
-                        try:
-                            heartbeat_url = f"http://{orchestrator_ip}:8000/heartbeat"
-                            response = requests.post(heartbeat_url, json=packet, timeout=2)
-                            if response.status_code == 200:
-                                status_msg = "200 OK"
-                            else:
-                                status_msg = f"ERR:{response.status_code}"
-                        except Exception as err:
-                            status_msg = "OFFLINE"
-                        print(f"[{status_msg}] Orchestrator: {orchestrator_ip} | CPU: {vitals['cpu_percent']}% | RAM: {vitals['ram_percent']}%    ", end="\r", flush=True)
+                        packet = {**identity, **vitals}                       
+                        heartbeat_url = f"http://{orchestrator_ip}:8000/heartbeat"
+                        response = requests.post(heartbeat_url, json=packet, timeout=2)
+                        
+                        if response.status_code == 200:
+                            print(f"[200 OK] Orchestrator: {orchestrator_ip} | CPU: {vitals['cpu_percent']}% | RAM: {vitals['ram_percent']}%  | GPU: {vitals['gpu_percent']}%    ", end="\r", flush=True)
+                        else:
+                            print(f"\n[!] Server error {response.status_code}. Re-discovering...")
+                            break
+                        time.sleep(4)
                 except KeyboardInterrupt:
                     print("Worker stopping...\n")
                     sys.exit(0)
                 except Exception as e:
                     print(f"Connection lost to Orchestrator: {e}")
                     print("Retrying...\n")
-                    time.sleep(2)
+                    time.sleep(5)
                     break
         else:
             print("Orchestrator not found. Retrying...\n")
