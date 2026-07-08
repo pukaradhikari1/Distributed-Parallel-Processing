@@ -59,13 +59,13 @@ def setup_windows():
 
     # Check requirements.txt exists
     if not os.path.exists(requirements_path):
-        print(f"❌ requirements.txt not found at {requirements_path}")
+        print(f" requirements.txt not found at {requirements_path}")
         print("   Make sure you cloned the full repo.")
         sys.exit(1)
 
     # Check grpc_server.py exists
     if not os.path.exists(grpc_server_path):
-        print(f"❌ grpc_server.py not found at {grpc_server_path}")
+        print(f" grpc_server.py not found at {grpc_server_path}")
         print("   Make sure grpc_layer/ folder exists in the repo root.")
         sys.exit(1)
 
@@ -75,12 +75,12 @@ def setup_windows():
     else:
         print("[1/4] Creating virtual environment...")
         subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
-        print("✅ Virtual environment created.")
+        print(" Virtual environment created.")
 
     print("[2/4] Installing packages...")
     subprocess.run([python_path, "-m", "pip", "install", "--upgrade", "pip"], check=True)
     subprocess.run([python_path, "-m", "pip", "install", "-r", requirements_path], check=True)
-    print("✅ Packages installed.")
+    print(" Packages installed.")
 
     # Step 3 — register in Task Scheduler (skip if already registered)
     print("[3/4] Checking Task Scheduler...")
@@ -91,7 +91,7 @@ def setup_windows():
     )
 
     if check.returncode == 0:
-        print("⚠️  Task already exists in Task Scheduler — skipping registration.")
+        print(" Task already exists in Task Scheduler — skipping registration.")
     else:
         print("[3/4] Registering in Task Scheduler...")
         task_command = (
@@ -100,7 +100,7 @@ def setup_windows():
             f'/sc onstart /ru SYSTEM /rl HIGHEST /f'
         )
         subprocess.run(task_command, shell=True, check=True)
-        print("✅ Task registered in Task Scheduler.")
+        print(" Task registered in Task Scheduler.")
 
     # Step 4 — start immediately (skip if already running)
     print("[4/4] Checking if worker is already running...")
@@ -112,15 +112,15 @@ def setup_windows():
     )
 
     if "50051" in check_port.stdout:
-        print("⚠️  Worker already running on port 50051 — skipping start.")
+        print("  Worker already running on port 50051 — skipping start.")
     else:
         print("Starting worker server now...")
         subprocess.Popen([python_path, grpc_server_path])
-        print("✅ Worker started.")
+        print(" Worker started.")
 
     print("")
-    print("✅ Windows setup complete!")
-    print("✅ Worker will auto-start on every reboot.")
+    print("Windows setup complete!")
+    print("Worker will auto-start on every reboot.")
     print("   Verify: netstat -an | findstr 50051")
     
 if __name__ == "__main__":
