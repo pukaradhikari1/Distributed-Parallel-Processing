@@ -3,14 +3,14 @@ import distributed_pb2
 import distributed_pb2_grpc
 
 def send_task_to_worker(worker_ip, job_id, shard_index, script_bytes, data_bytes, model_weights_bytes=b""):
-    # 1. ADD BACK THE 500MB LIMIT FOR ML WEIGHTS
+   
     MAX_MESSAGE_LENGTH = 500 * 1024 * 1024
     options = [
         ('grpc.max_send_message_length', MAX_MESSAGE_LENGTH),
         ('grpc.max_receive_message_length', MAX_MESSAGE_LENGTH)
     ]
 
-    # 2. Port is correctly set to 50051 with the new payload options
+    
     channel = grpc.insecure_channel(f"{worker_ip}:50051", options=options)
     stub = distributed_pb2_grpc.WorkerServiceStub(channel)
 
@@ -23,7 +23,7 @@ def send_task_to_worker(worker_ip, job_id, shard_index, script_bytes, data_bytes
     )
 
     try:
-        # 3. ADD BACK THE 300s TIMEOUT for heavy model training
+       
         result = stub.ExecuteTask(payload, timeout=300)
         return result
 

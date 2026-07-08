@@ -8,14 +8,17 @@ from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from jose import jwt, JWTError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./auth.db"  
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./auth.db") 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# SQLAlchemy User Model
+
 class DBUser(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -29,7 +32,7 @@ class DBUser(Base):
     created_at = Column(String, default=lambda: datetime.utcnow().strftime("%B %d, %Y"))
     plan = Column(String, default="Free")
     
-    # Cluster Access
+    
     role = Column(String, default="Viewer")
     api_access = Column(String, default="Read-only")
     max_workers = Column(Integer, default=5)
@@ -37,7 +40,7 @@ class DBUser(Base):
 # Create the database tables
 Base.metadata.create_all(bind=engine)
 
-# Dependency to get database session
+
 def get_db():
     db = SessionLocal()
     try:
@@ -46,9 +49,7 @@ def get_db():
         db.close()
 
 
-# ---------------------------------------------------------
-# 2. PASSWORD HASHING SETUP
-# ---------------------------------------------------------
+
 def verify_password(plain_password, hashed_password):
     # Pre-hash with SHA-256 to bypass bcrypt's 72-byte limit safely.
     pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest().encode('utf-8')
@@ -61,11 +62,8 @@ def get_password_hash(password):
     return bcrypt.hashpw(pre_hashed, salt).decode('utf-8')
 
 
-# ---------------------------------------------------------
-# 3. JWT TOKEN & AUTH SECURITY SETUP
-# ---------------------------------------------------------
-SECRET_KEY = "your-super-secret-key-change-this-in-production"
-ALGORITHM = "HS256"
+SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week expiration
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -77,7 +75,7 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# Dependency to get the currently logged-in user using the Token
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -98,9 +96,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-# ---------------------------------------------------------
-# 4. PYDANTIC SCHEMAS (For request validation)
-# ---------------------------------------------------------
+
 class UserSignup(BaseModel):
     username: str
     email: str # Added to match Create Account screen
@@ -119,9 +115,7 @@ class ProfileUpdate(BaseModel):
     bio: str
 
 
-# ---------------------------------------------------------
-# 5. FASTAPI ROUTES
-# ---------------------------------------------------------
+
 router = APIRouter()
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -132,10 +126,10 @@ def signup(user: UserSignup, db: Session = Depends(get_db)):
     if db.query(DBUser).filter(DBUser.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # 2. Hash the password
+
     hashed_pw = get_password_hash(user.password)
     
-    # 3. Save to database
+    
     new_user = DBUser(username=user.username, email=user.email, hashed_password=hashed_pw)
     db.add(new_user)
     db.commit()
@@ -156,13 +150,13 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             detail="Incorrect username or password",
         )
     
-    # 3. Create access token
+    # 3. Create access token (This is how we "save" the logged-in state)
     access_token = create_access_token(data={"sub": db_user.username})
     
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-# --- NEW PROFILE ROUTES ---
+
 
 @router.get("/profile")
 def get_profile(current_user: DBUser = Depends(get_current_user)):

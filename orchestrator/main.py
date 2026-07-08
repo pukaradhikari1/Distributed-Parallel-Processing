@@ -10,7 +10,7 @@ from workers import workers, register_worker, update_heartbeat, get_available_wo
 from jobs import jobs, create_job, assign_job, complete_job, fail_job
 from dispatcher import dispatch_job
 from monitor import monitor_workers
-from errors import get_all_errors  # Added back for the Android Errors screen
+from errors import get_all_errors  
 import auth
 
 app = FastAPI()
@@ -22,7 +22,7 @@ async def broadcast_presence():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     
-    # Get the Orchestrator's actual local IP address
+    
     try:
         s_ip = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s_ip.connect(('8.8.8.8', 80))
@@ -73,8 +73,8 @@ def heartbeat(data: Heartbeat):
 @app.post('/submit-job')
 async def submit_job(
     background_tasks: BackgroundTasks, 
-    job_name: str = Form(...),             # ADDED: For Android UI Job Name
-    notes: Optional[str] = Form(None),     # ADDED: For Android UI Notes
+    job_name: str = Form(...),             
+    notes: Optional[str] = Form(None),     
     script_file: UploadFile = File(...),
     data_file: Optional[UploadFile] = File(None),
     weights_file: Optional[UploadFile] = File(None)
@@ -88,14 +88,14 @@ async def submit_job(
     with open(script_path, "wb") as f:
         f.write(await script_file.read())
 
-    # 3. Save Data (if provided)
+    
     data_path = None
     if data_file:
         data_path = os.path.join(job_dir, data_file.filename)
         with open(data_path, "wb") as f:
             f.write(await data_file.read())
 
-    # 4. Save Weights (if provided)
+    
     weights_path = None
     if weights_file:
         weights_path = os.path.join(job_dir, weights_file.filename)
