@@ -34,14 +34,14 @@ def setup_macos():
 
     # Check requirements.txt exists
     if not os.path.exists(requirements_path):
-        print(f"❌ requirements.txt not found at {requirements_path}")
-        print("   Make sure you cloned the full repo.")
+        print(f"requirements.txt not found at {requirements_path}")
+        print("Make sure you cloned the full repo.")
         sys.exit(1)
 
     # Check grpc_server.py exists
     if not os.path.exists(grpc_server_path):
-        print(f"❌ grpc_server.py not found at {grpc_server_path}")
-        print("   Make sure grpc_layer/ folder exists in the repo root.")
+        print(f"grpc_server.py not found at {grpc_server_path}")
+        print("Make sure grpc_layer/ folder exists in the repo root.")
         sys.exit(1)
 
     # Step 1 — create venv (skip if already exists)
@@ -50,19 +50,19 @@ def setup_macos():
     else:
         print("[1/4] Creating virtual environment...")
         subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
-        print("✅ Virtual environment created.")
+        print("Virtual environment created.")
 
     # Step 2 — install requirements
     print("[2/4] Installing packages...")
     subprocess.run([python_path, "-m", "pip", "install", "--upgrade", "pip"], check=True)
     subprocess.run([python_path, "-m", "pip", "install", "-r", requirements_path], check=True)
-    print("✅ Packages installed.")
+    print(" Packages installed.")
 
     # Step 3 — create launchd plist (skip if already exists)
     print("[3/4] Checking launchd agent...")
 
     if os.path.exists(plist_path):
-        print("⚠️  launchd agent already exists — skipping registration.")
+        print("launchd agent already exists — skipping registration.")
     else:
         print("[3/4] Creating launchd agent...")
         os.makedirs(plist_dir, exist_ok=True)
@@ -101,7 +101,7 @@ def setup_macos():
         with open(plist_path, "w") as f:
             f.write(plist_content)
 
-        print("✅ launchd plist created.")
+        print("launchd plist created.")
 
     # Step 4 — load agent (skip if already running)
     print("[4/4] Checking if worker is already running...")
@@ -113,16 +113,16 @@ def setup_macos():
     )
 
     if "50051" in check_port.stdout:
-        print("⚠️  Worker already running on port 50051 — skipping start.")
+        print("Worker already running on port 50051 — skipping start.")
     else:
         print("Loading launchd agent...")
         os.system(f"launchctl load {plist_path}")
         os.system(f"launchctl start {PLIST_LABEL}")
-        print("✅ Worker started.")
+        print("Worker started.")
 
     print("")
-    print("✅ macOS setup complete!")
-    print("✅ Worker will auto-start on every login.")
+    print(" macOS setup complete!")
+    print(" Worker will auto-start on every login.")
     print(f"   Check status : launchctl list | grep dpp")
     print(f"   View logs    : tail -f {log_path}")
     print(f"   View errors  : tail -f {error_log_path}")
@@ -136,5 +136,5 @@ if __name__ == "__main__":
     if syst == "Darwin":
         setup_macos()
     else:
-        print(f"❌ This script is for macOS only. Detected: {syst}")
-        print("   Use install.py for Windows/Linux.")
+        print(f"This script is for macOS only. Detected: {syst}")
+        print("Use install.py for Windows/Linux.")
