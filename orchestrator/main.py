@@ -37,6 +37,7 @@ async def broadcast_presence():
         try:
             # Broadcast to the whole local network on port 50005
             s.sendto(message, ('<broadcast>', 50005))
+            print(f"[DEBUG] Broadcasting IP: {local_ip} on port 50005")
         except Exception:
             pass
         await asyncio.sleep(3) # Broadcast every 3 seconds

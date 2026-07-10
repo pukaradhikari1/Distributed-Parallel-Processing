@@ -1,23 +1,32 @@
 import os
 import hashlib
 import bcrypt
+import random
+import smtplib
+from email.message import EmailMessage
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, Field, EmailStr
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 
+
+from schemas import (
+    UserSignup, UserLogin, TokenResponse, ProfileUpdate, 
+    SendOTPRequest, VerifyOTPRequest
+)
+
 load_dotenv()
+
 
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./auth.db") 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
 
 class DBUser(Base):
     __tablename__ = "users"
@@ -32,14 +41,16 @@ class DBUser(Base):
     created_at = Column(String, default=lambda: datetime.utcnow().strftime("%B %d, %Y"))
     plan = Column(String, default="Free")
     
-    
     role = Column(String, default="Viewer")
     api_access = Column(String, default="Read-only")
     max_workers = Column(Integer, default=5)
 
-# Create the database tables
-Base.metadata.create_all(bind=engine)
+   
+    is_verified = Column(Boolean, default=False)
+    otp_code = Column(String, nullable=True)
+    otp_expire_at = Column(DateTime, nullable=True)
 
+Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()
@@ -50,21 +61,50 @@ def get_db():
 
 
 
+# 2. EMAIL SENDER CONFIGURATION
+
+
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SMTP_USER = os.getenv("SMTP_USER", "your_email@gmail.com")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "your_app_password")
+
+def send_email_background(to_email: str, subject: str, body: str):
+    """Utility function to send an email. Runs in the background."""
+    try:
+        msg = EmailMessage()
+        msg.set_content(body)
+        msg['Subject'] = subject
+        msg['From'] = SMTP_USER
+        msg['To'] = to_email
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print(f"OTP successfully sent to {to_email}")
+    except Exception as e:
+        print(f"Failed to send email to {to_email}: {e}")
+
+
+
+# 3. PASSWORD HASHING SETUP
+
 def verify_password(plain_password, hashed_password):
-    # Pre-hash with SHA-256 to bypass bcrypt's 72-byte limit safely.
     pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest().encode('utf-8')
     return bcrypt.checkpw(pre_hashed, hashed_password.encode('utf-8'))
 
 def get_password_hash(password):
-    # Pre-hash with SHA-256 to bypass bcrypt's 72-byte limit safely.
     pre_hashed = hashlib.sha256(password.encode('utf-8')).hexdigest().encode('utf-8')
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pre_hashed, salt).decode('utf-8')
 
 
+#jwt
 SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week expiration
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -74,7 +114,6 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
-
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
@@ -96,74 +135,98 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-
-class UserSignup(BaseModel):
-    username: str
-    email: str # Added to match Create Account screen
-    password: str = Field(max_length=1000)
-
-class UserLogin(BaseModel):
-    username: str
-    password: str = Field(max_length=1000)
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str
-
-class ProfileUpdate(BaseModel):
-    display_name: str
-    bio: str
-
-
-
+#fastapiroutes
 router = APIRouter()
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
-def signup(user: UserSignup, db: Session = Depends(get_db)):
-    # 1. Check if username OR email already exists
+def signup(user: UserSignup, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if db.query(DBUser).filter(DBUser.username == user.username).first():
         raise HTTPException(status_code=400, detail="Username already registered")
     if db.query(DBUser).filter(DBUser.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
-
     hashed_pw = get_password_hash(user.password)
-    
     
     new_user = DBUser(username=user.username, email=user.email, hashed_password=hashed_pw)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     
-    return {"message": "User created successfully"}
+    return {"message": "User created successfully. Please verify your email."}
 
 
 @router.post("/login", response_model=TokenResponse)
 def login(user: UserLogin, db: Session = Depends(get_db)):
-    # 1. Find user in the database
     db_user = db.query(DBUser).filter(DBUser.username == user.username).first()
     
-    # 2. Verify existence and password
     if not db_user or not verify_password(user.password, db_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
     
-    # 3. Create access token (This is how we "save" the logged-in state)
-    access_token = create_access_token(data={"sub": db_user.username})
+    # Optional: Block login if email is not verified
+    # if not db_user.is_verified:
+    #     raise HTTPException(status_code=403, detail="Please verify your email via OTP first.")
     
+    access_token = create_access_token(data={"sub": db_user.username})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 
 
+@router.post("/send-otp")
+def send_otp(req: SendOTPRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    user = db.query(DBUser).filter(DBUser.email == req.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+   
+    otp = "".join(random.choices("0123456789", k=6))
+    
+    
+    user.otp_code = otp
+    user.otp_expire_at = datetime.utcnow() + timedelta(minutes=10)
+    db.commit()
+
+    # Dispatch email sending to the background so the API responds instantly
+    email_body = f"Hello {user.username},\n\nYour verification code is: {otp}\n\nThis code will expire in 10 minutes."
+    background_tasks.add_task(send_email_background, user.email, "Your OTP Verification Code", email_body)
+
+    return {"message": "OTP sent successfully to your email."}
+
+
+@router.post("/verify-otp")
+def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
+    user = db.query(DBUser).filter(DBUser.email == req.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+  
+    if not user.otp_code or user.otp_code != req.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP code")
+
+    # expired or not 
+    if user.otp_expire_at and datetime.utcnow() > user.otp_expire_at:
+        raise HTTPException(status_code=400, detail="OTP has expired. Please request a new one.")
+
+    # Verified
+    user.is_verified = True
+    user.otp_code = None       # Clear the OTP code so it can't be used again
+    user.otp_expire_at = None  # Clear expiration
+    db.commit()
+
+    return {"message": "Email verified successfully"}
+
+
+# --- PROFILE ROUTES ---
+
 @router.get("/profile")
 def get_profile(current_user: DBUser = Depends(get_current_user)):
-    """Returns the profile data needed for the Profile screen"""
     return {
         "username": current_user.username,
         "email": current_user.email,
+        "is_verified": current_user.is_verified, # Added verified status
         "display_name": current_user.display_name or current_user.username,
         "bio": current_user.bio or "",
         "created_at": current_user.created_at,
@@ -175,7 +238,6 @@ def get_profile(current_user: DBUser = Depends(get_current_user)):
 
 @router.put("/profile")
 def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_db), current_user: DBUser = Depends(get_current_user)):
-    """Updates the display name and bio"""
     current_user.display_name = profile_data.display_name
     current_user.bio = profile_data.bio
     db.commit()
