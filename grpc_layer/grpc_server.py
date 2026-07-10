@@ -163,6 +163,25 @@ class WorkerServiceServicer(distributed_pb2_grpc.WorkerServiceServicer):
         print(f"Heartbeat checked\n")
         return distributed_pb2.HeartbeatResponse(acknowledged=True)
 
+def find_orchestrator():
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    client.bind(("", 50005))
+    client.settimeout(1.0)
+    print("Searching for Orchestrator signal...", end="")
+    while True:
+        try:
+            print(".", end="", flush=True)
+            data, addr = client.recvfrom(1024)
+            msg = data.decode()
+            if msg.startswith("ORCHESTRATOR:"):
+                ip=msg.split(":")[1]
+                print(f"Found Orchestrator at {ip}")
+                return ip
+        except socket.timeout: 
+            continue
+        
 def register_with_orchestrator(orchestrator_ip):
     identity=get_identity()
     
@@ -185,22 +204,6 @@ def register_with_orchestrator(orchestrator_ip):
         print(f"Failed to connect to Orchestrator for registration: {e}")
         return False
 
-def find_orchestrator():
-    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    client.bind(("", 50005))
-    client.settimeout(2.0)
-    while True:
-        try:
-            data, addr = client.recvfrom(1024)
-            msg = data.decode()
-            if msg.startswith("ORCHESTRATOR:"):
-                ip=msg.split(":")[1]
-                print(f"Found Orchestrator at {ip}")
-                return ip
-        except socket.timeout: 
-            continue
-
 def serve(hardware_id):
     MAX_MESSAGE_LENGTH=500*1024*1024
     options=[('grpc.max_send_message_length', MAX_MESSAGE_LENGTH),
@@ -211,6 +214,7 @@ def serve(hardware_id):
     distributed_pb2_grpc.add_WorkerServiceServicer_to_server(servicer,server)
     distributed_pb2_grpc.add_OrchestratorServiceServicer_to_server(OrchestratorServiceServicer(),server)
     server.add_insecure_port('[::]:50051')
+    server.start()
     print("Worker grpc server starting on port 50051...\n ")
     return server
 
@@ -241,7 +245,7 @@ if __name__=="__main__":
 
     try:
         while True:
-            orchestrator_ip=find_orchestrator()
+            orchestrator_ip=find_orchestrator()##
             if orchestrator_ip:
                 if register_with_orchestrator(orchestrator_ip):
                     print(f"Monitoring vitals...\n")
@@ -249,7 +253,10 @@ if __name__=="__main__":
                     try:
                         while True:
                             vitals = get_vitals()
-                            packet = {**identity, **vitals}                       
+                            packet = {"worker_id": identity["hardware_id"],
+                                      "cpu_percent": vitals["cpu_percent"],
+                                      "ram_percent": vitals["ram_percent"],
+                                      "gpu_percent": vitals["gpu_percent"]}                       
                             heartbeat_url = f"http://{orchestrator_ip}:8000/heartbeat"
                             response = requests.post(heartbeat_url, json=packet, timeout=2)
                         

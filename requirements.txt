@@ -40,7 +40,7 @@ uvicorn==0.47.0
 grpcio
 grpcio-tools
 protobuf
-tensorflow[and-cuda]
-matplotlib
-tf-nightly
-tf-keras
+# tensorflow[and-cuda]
+# matplotlib
+# tf-nightly
+# tf-keras

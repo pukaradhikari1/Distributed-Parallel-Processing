@@ -2,7 +2,6 @@ import os
 import platform
 import subprocess
 import sys
-import pwd
 
 #navigate to worker folder in terminal
 # 1) chmod +x install_worker.sh
@@ -11,6 +10,7 @@ import pwd
 # to verify if the worker is running in the background:
 # sudo systemctl status worker 
 def setup_linux():
+    import pwd
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sh_path = os.path.abspath(os.path.join(current_dir, "install_worker.sh"))
     user = os.environ.get('SUDO_USER') or pwd.getpwuid(os.getuid())[0]
@@ -179,11 +179,19 @@ if __name__ == "__main__":
     is_wsl="microsoft" in platform.release().lower()
     
     if syst == "Windows":
+        optimize_wsl_networking()
+        ("WSL networking has been optimized.\n")
+
+        choice = input("Do you want to install the NATIVE Windows Worker? \n(Type 'y' for native, or press Enter to skip and use WSL instead): ")
+        
+        if choice.lower() == 'y':
+            setup_windows()
+        else:
+            print("\nSkipping Windows Native setup.")
         setup_windows() 
     elif syst == "Linux":
-        if is_wsl:
-            print("wsl detected.")
-            optimize_wsl_networking()
+        # if is_wsl:
+        #     print("WSL detected.")
         setup_linux()
     else:
         print(f"Unknown OS: {syst}")
