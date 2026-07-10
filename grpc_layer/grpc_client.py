@@ -42,7 +42,7 @@ def send_task_to_worker(worker_ip, job_id, shard_index, script_bytes,
     )
 
     try:
-        result = stub.ExecuteTask(payload, timeout=120)
+        result = stub.ExecuteTask(payload, timeout=300)
         return result
 
     except grpc.RpcError as e:

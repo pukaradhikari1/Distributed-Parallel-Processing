@@ -2,6 +2,7 @@ import os
 import platform
 import subprocess
 import sys
+import pwd
 
 #navigate to worker folder in terminal
 # 1) chmod +x install_worker.sh
@@ -12,7 +13,7 @@ import sys
 def setup_linux():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sh_path = os.path.abspath(os.path.join(current_dir, "install_worker.sh"))
-    user = os.getlogin()
+    user = os.environ.get('SUDO_USER') or pwd.getpwuid(os.getuid())[0]
 
     # Define the Service File
     service_content = f"""[Unit]
@@ -122,14 +123,67 @@ def setup_windows():
     print("Windows setup complete!")
     print("Worker will auto-start on every reboot.")
     print("   Verify: netstat -an | findstr 50051")
+
+def optimize_wsl_networking():
+    if platform.system() != "Windows":
+        return
+
+    print("Checking WSL configuration...")
     
+    user_profile = os.environ.get('USERPROFILE')
+    if not user_profile:
+        print("Could not find Windows User Profile.")
+        return
+
+    wsl_config_path = os.path.join(user_profile, ".wslconfig")
+    
+    required_config = [
+        "[wsl2]\n",
+        "networkingMode=mirrored\n"
+    ]
+
+    needs_update = False
+    current_content = []
+    if os.path.exists(wsl_config_path):
+        with open(wsl_config_path, "r") as f:
+            current_content = f.readlines()
+        
+        if not any("networkingMode=mirrored" in line for line in current_content):
+            needs_update = True
+    else:
+        needs_update = True
+
+    if needs_update:
+        print(f"Updating {wsl_config_path} for better networking...")
+        
+        if not current_content:
+            new_content = required_config
+        else:
+            new_content = current_content
+            if "[wsl2]\n" not in new_content:
+                new_content.insert(0, "[wsl2]\n")
+            new_content.append("networkingMode=mirrored\n")
+
+        with open(wsl_config_path, "w") as f:
+            f.writelines(new_content)
+        
+        print("SUCCESS: Mirrored networking enabled.")
+        print("IMPORTANT: You must restart WSL for changes to take effect.")
+        print("Please run 'wsl --shutdown' in PowerShell.")
+    else:
+        print("WSL Networking is already optimized.")
+
 if __name__ == "__main__":
     syst = platform.system()
     print(f"System detected: {syst}")
+    is_wsl="microsoft" in platform.release().lower()
     
     if syst == "Windows":
         setup_windows() 
     elif syst == "Linux":
+        if is_wsl:
+            print("wsl detected.")
+            optimize_wsl_networking()
         setup_linux()
     else:
-        print("Unknown OS")
+        print(f"Unknown OS: {syst}")
