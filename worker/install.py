@@ -9,6 +9,8 @@ import sys
 
 # to verify if the worker is running in the background:
 # sudo systemctl status worker 
+# journalctl -u worker.service -f
+
 def setup_linux():
     import pwd
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -56,7 +58,7 @@ def setup_windows():
     python_path = os.path.join(venv_path, "Scripts", "python.exe")
     pip_path = os.path.join(venv_path, "Scripts", "pip.exe")
     requirements_path = os.path.join(repo_root, "requirements.txt")
-    grpc_server_path = os.path.join(repo_root, "grpc_layer", "grpc_server.py")
+    grpc_server_path = os.path.join(repo_root, "grpc_server.py")
 
     # Check requirements.txt exists
     if not os.path.exists(requirements_path):
@@ -190,8 +192,8 @@ if __name__ == "__main__":
             print("\nSkipping Windows Native setup.")
         setup_windows() 
     elif syst == "Linux":
-        # if is_wsl:
-        #     print("WSL detected.")
+        if is_wsl:
+            print("WSL detected.")
         setup_linux()
     else:
         print(f"Unknown OS: {syst}")

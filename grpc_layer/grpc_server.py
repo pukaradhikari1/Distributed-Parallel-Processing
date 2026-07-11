@@ -26,6 +26,10 @@ import threading
 import subprocess
 import re
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+grpc_path = os.path.abspath(os.path.join(current_dir, "..", "grpc_layer"))
+sys.path.append(grpc_path)
+
 import distributed_pb2
 import distributed_pb2_grpc
 

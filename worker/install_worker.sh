@@ -18,6 +18,13 @@ then
     exit 1
 fi
 
+if [ -f "$DIR/venv/bin/activate" ]; then
+    source "$DIR/venv/bin/activate"
+else
+    echo "ERROR: venv not found in $DIR"
+    exit 1
+fi
+
 # 3. Check/Create Virtual Environment
 VENV_PATH="$DIR/venv"
 
@@ -42,12 +49,12 @@ pip install -r ../requirements.txt --quiet
 
 # 6. Run the Worker
 while true; do
-    echo "[$(date)]Starting worker.py..."
-    python3 worker.py
+    echo "[$(date)]Starting grpc_server.py..."
+    python3 "$DIR/grpc_server.py"
 
-    echo""
-    echo"[!] Worker exited or crashed. Re-registerin in 10 seconds..."
-    echo"Press Ctrl+C to stop."
+    echo ""
+    echo "[!] Worker exited or crashed. Re-registerin in 10 seconds..."
+    echo "Press Ctrl+C to stop."
     sleep 10
 done
 
