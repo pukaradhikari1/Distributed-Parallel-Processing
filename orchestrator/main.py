@@ -1,6 +1,7 @@
 import os
 import asyncio
 import socket
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from typing import Optional
@@ -10,11 +11,8 @@ from workers import workers, register_worker, update_heartbeat, get_available_wo
 from jobs import jobs, create_job, assign_job, complete_job, fail_job
 from dispatcher import dispatch_job
 from monitor import monitor_workers
-from errors import get_all_errors  
+from errors import get_all_errors  # Added back for the Android Errors screen
 import auth
-
-app = FastAPI()
-app.include_router(auth.router)
 
 
 async def broadcast_presence():
@@ -22,7 +20,7 @@ async def broadcast_presence():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     
-    
+    # Get the Orchestrator's actual local IP address
     try:
         s_ip = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s_ip.connect(('8.8.8.8', 80))
@@ -37,16 +35,27 @@ async def broadcast_presence():
         try:
             # Broadcast to the whole local network on port 50005
             s.sendto(message, ('<broadcast>', 50005))
-            print(f"[DEBUG] Broadcasting IP: {local_ip} on port 50005")
         except Exception:
             pass
         await asyncio.sleep(3) # Broadcast every 3 seconds
 
 
-@app.on_event('startup')
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- STARTUP LOGIC ---
+    print("Orchestrator starting up background tasks...")
     asyncio.create_task(monitor_workers())
     asyncio.create_task(broadcast_presence())
+    
+    yield # This yields control back to FastAPI so it can run the server
+    
+    # --- SHUTDOWN LOGIC ---
+    print("Orchestrator shutting down...")
+
+
+# Pass the lifespan function into FastAPI when you create the app
+app = FastAPI(lifespan=lifespan)
+app.include_router(auth.router)
 
 
 @app.get('/')
@@ -74,8 +83,8 @@ def heartbeat(data: Heartbeat):
 @app.post('/submit-job')
 async def submit_job(
     background_tasks: BackgroundTasks, 
-    job_name: str = Form(...),             
-    notes: Optional[str] = Form(None),     
+    job_name: str = Form(...),             # ADDED: For Android UI Job Name
+    notes: Optional[str] = Form(None),     # ADDED: For Android UI Notes
     script_file: UploadFile = File(...),
     data_file: Optional[UploadFile] = File(None),
     weights_file: Optional[UploadFile] = File(None)
@@ -89,14 +98,14 @@ async def submit_job(
     with open(script_path, "wb") as f:
         f.write(await script_file.read())
 
-    
+    # 3. Save Data (if provided)
     data_path = None
     if data_file:
         data_path = os.path.join(job_dir, data_file.filename)
         with open(data_path, "wb") as f:
             f.write(await data_file.read())
 
-    
+    # 4. Save Weights (if provided)
     weights_path = None
     if weights_file:
         weights_path = os.path.join(job_dir, weights_file.filename)
