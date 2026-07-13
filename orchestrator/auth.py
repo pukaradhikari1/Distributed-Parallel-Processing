@@ -8,26 +8,22 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from dotenv import load_dotenv
-
 
 from schemas import (
     UserSignup, UserLogin, TokenResponse, ProfileUpdate, 
     SendOTPRequest, VerifyOTPRequest
 )
 
+# ADDED: Import the database connection from your new file!
+from database import Base, get_db
+
 load_dotenv()
 
-
-
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./auth.db") 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
+# 1. DATABASE MODEL FOR USERS
 class DBUser(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -45,25 +41,12 @@ class DBUser(Base):
     api_access = Column(String, default="Read-only")
     max_workers = Column(Integer, default=5)
 
-   
     is_verified = Column(Boolean, default=False)
     otp_code = Column(String, nullable=True)
     otp_expire_at = Column(DateTime, nullable=True)
 
-Base.metadata.create_all(bind=engine)
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 
 # 2. EMAIL SENDER CONFIGURATION
-
-
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER", "your_email@gmail.com")
@@ -88,9 +71,7 @@ def send_email_background(to_email: str, subject: str, body: str):
         print(f"Failed to send email to {to_email}: {e}")
 
 
-
 # 3. PASSWORD HASHING SETUP
-
 def verify_password(plain_password, hashed_password):
     pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest().encode('utf-8')
     return bcrypt.checkpw(pre_hashed, hashed_password.encode('utf-8'))
@@ -101,7 +82,7 @@ def get_password_hash(password):
     return bcrypt.hashpw(pre_hashed, salt).decode('utf-8')
 
 
-#jwt
+# 4. JWT CONFIGURATION
 SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 
@@ -135,7 +116,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-#fastapiroutes
+# 5. FASTAPI ROUTES
 router = APIRouter()
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -165,14 +146,8 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             detail="Incorrect username or password",
         )
     
-    # Optional: Block login if email is not verified
-    # if not db_user.is_verified:
-    #     raise HTTPException(status_code=403, detail="Please verify your email via OTP first.")
-    
     access_token = create_access_token(data={"sub": db_user.username})
     return {"access_token": access_token, "token_type": "bearer"}
-
-
 
 
 @router.post("/send-otp")
@@ -181,15 +156,12 @@ def send_otp(req: SendOTPRequest, background_tasks: BackgroundTasks, db: Session
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-   
     otp = "".join(random.choices("0123456789", k=6))
-    
     
     user.otp_code = otp
     user.otp_expire_at = datetime.utcnow() + timedelta(minutes=10)
     db.commit()
 
-    # Dispatch email sending to the background so the API responds instantly
     email_body = f"Hello {user.username},\n\nYour verification code is: {otp}\n\nThis code will expire in 10 minutes."
     background_tasks.add_task(send_email_background, user.email, "Your OTP Verification Code", email_body)
 
@@ -202,18 +174,15 @@ def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-  
     if not user.otp_code or user.otp_code != req.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP code")
 
-    # expired or not 
     if user.otp_expire_at and datetime.utcnow() > user.otp_expire_at:
         raise HTTPException(status_code=400, detail="OTP has expired. Please request a new one.")
 
-    # Verified
     user.is_verified = True
-    user.otp_code = None       # Clear the OTP code so it can't be used again
-    user.otp_expire_at = None  # Clear expiration
+    user.otp_code = None       
+    user.otp_expire_at = None  
     db.commit()
 
     return {"message": "Email verified successfully"}
@@ -226,7 +195,7 @@ def get_profile(current_user: DBUser = Depends(get_current_user)):
     return {
         "username": current_user.username,
         "email": current_user.email,
-        "is_verified": current_user.is_verified, # Added verified status
+        "is_verified": current_user.is_verified, 
         "display_name": current_user.display_name or current_user.username,
         "bio": current_user.bio or "",
         "created_at": current_user.created_at,
