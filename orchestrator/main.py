@@ -8,8 +8,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from database import engine, Base, get_db
-import models # Ensures Job table is loaded
-import auth   # Ensures DBUser table is loaded
+import models 
+import auth   
 
 # Build all tables safely at startup
 Base.metadata.create_all(bind=engine)

@@ -10,20 +10,20 @@ def register_worker(worker_data):
         'status': 'online',
         'last_seen': time.time(),
         'current_job': None,
-        'cpu_percent': 0.0,  # Initialize telemetry fields
+        'cpu_percent': 0.0,  
         'ram_percent': 0.0,
-        'gpu_percent': 0.0   # Initialize GPU field
+        'gpu_percent': 0.0  
     }
 
 def update_heartbeat(heartbeat_data):
-    # We now expect a Pydantic Heartbeat model, not just a string
+
     worker_id = heartbeat_data.worker_id
     
     if worker_id in workers:
         workers[worker_id]['last_seen'] = time.time()
         workers[worker_id]['status'] = 'online'
         
-        # Save telemetry so Member 5 (Android) can display live stats
+        # disp in ui 
         if heartbeat_data.cpu_percent is not None:
             workers[worker_id]['cpu_percent'] = heartbeat_data.cpu_percent
         if heartbeat_data.ram_percent is not None:

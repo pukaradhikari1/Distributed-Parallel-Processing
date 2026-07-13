@@ -20,7 +20,7 @@ async def monitor_workers():
                 
                 worker['status'] = 'offline'
 
-                # Open DB session to check for stranded jobs
+                
                 db = SessionLocal()
                 try:
                     active_jobs = db.query(Job).filter(Job.worker_id == worker_id, Job.status == 'running').all()

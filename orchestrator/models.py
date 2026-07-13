@@ -2,10 +2,9 @@ from pydantic import BaseModel
 from typing import Optional
 import time
 
-# --- ADDED: SQLAlchemy Database Imports ---
+
 from sqlalchemy import Column, String, Float, ForeignKey
-# CRITICAL: Import your 'Base' from wherever you set up your database connection for user auth!
-# (Usually, this is in a file named database.py)
+
 from database import Base 
 
 
@@ -25,19 +24,16 @@ class Heartbeat(BaseModel):
     ram_gb: Optional[int] = None
     cpu_percent: Optional[float] = None
     ram_percent: Optional[float] = None
-    gpu_percent: Optional[float] = None  # <-- Added for the Android UI
+    gpu_percent: Optional[float] = None  # ui
     timestamp: Optional[float] = None
 
 
-# ----------------------------------------------------
-# 2. SQLALCHEMY MODELS (Table Structure for the Database)
-# ----------------------------------------------------
 class Job(Base):
     __tablename__ = "jobs"
 
     job_id = Column(String, primary_key=True, index=True)
     
-    # This securely links the job to the user who submitted it
+    
     user_id = Column(String, ForeignKey("users.id")) 
     
     filename = Column(String)

@@ -16,10 +16,10 @@ def log_error(worker_id: str, severity: str, message: str):
     }
     system_errors.append(error)
     
-    # Keep only the latest 100 errors to save memory
+#only keeping the latest 100 
     if len(system_errors) > 100:
         system_errors.pop(0)
 
 def get_all_errors():
-    # Return errors sorted newest to oldest
+    
     return system_errors[::-1]

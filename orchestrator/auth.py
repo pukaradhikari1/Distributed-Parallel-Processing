@@ -18,7 +18,7 @@ from schemas import (
     SendOTPRequest, VerifyOTPRequest
 )
 
-# ADDED: Import the database connection from your new file!
+
 from database import Base, get_db
 
 load_dotenv()
@@ -46,7 +46,7 @@ class DBUser(Base):
     otp_expire_at = Column(DateTime, nullable=True)
 
 
-# 2. EMAIL SENDER CONFIGURATION
+# 2. Email server config
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER", "your_email@gmail.com")
@@ -71,7 +71,7 @@ def send_email_background(to_email: str, subject: str, body: str):
         print(f"Failed to send email to {to_email}: {e}")
 
 
-# 3. PASSWORD HASHING SETUP
+# pass hashing 
 def verify_password(plain_password, hashed_password):
     pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest().encode('utf-8')
     return bcrypt.checkpw(pre_hashed, hashed_password.encode('utf-8'))
@@ -82,7 +82,7 @@ def get_password_hash(password):
     return bcrypt.hashpw(pre_hashed, salt).decode('utf-8')
 
 
-# 4. JWT CONFIGURATION
+# jwt config
 SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 
@@ -116,7 +116,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-# 5. FASTAPI ROUTES
+# routes 
 router = APIRouter()
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -188,7 +188,7 @@ def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
     return {"message": "Email verified successfully"}
 
 
-# --- PROFILE ROUTES ---
+# profil
 
 @router.get("/profile")
 def get_profile(current_user: DBUser = Depends(get_current_user)):
