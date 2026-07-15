@@ -9,7 +9,7 @@ def log_error(worker_id: str, severity: str, message: str):
     error = {
         "id": str(uuid.uuid4()),
         "worker_id": worker_id,
-        "severity": severity,  # "low", "medium", "high", "critical"
+        "severity": severity,  
         "message": message,
         "timestamp": datetime.now().strftime("%m/%d/%Y, %I:%M:%S %p"),
         "resolved": False

@@ -211,3 +211,10 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_db), c
     current_user.bio = profile_data.bio
     db.commit()
     return {"message": "Profile updated successfully"}
+
+@router.delete("/delete-account")
+def delete_account(current_user: DBUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Deletes the currently authenticated user's account from the database."""
+    db.delete(current_user)
+    db.commit()
+    return {"message": "Account successfully deleted"}

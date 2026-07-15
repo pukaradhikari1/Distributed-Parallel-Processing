@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from typing import Optional
 from sqlalchemy.orm import Session
-
+from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base, get_db
 import models 
 import auth   
@@ -14,7 +14,8 @@ import auth
 # Build all tables safely at startup
 Base.metadata.create_all(bind=engine)
 
-from models import Worker, Heartbeat
+# Added Job to the imports here so the /outputs route can query the database
+from models import Worker, Heartbeat, Job
 from workers import workers, register_worker, update_heartbeat, get_available_worker
 from jobs import create_job, assign_job, get_all_jobs
 from dispatcher import dispatch_job
@@ -55,6 +56,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(auth.router)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, DELETE, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
 
 
 @app.get('/')
@@ -134,6 +144,22 @@ def list_workers():
 @app.get('/jobs')
 def list_jobs(db: Session = Depends(get_db)):
     return get_all_jobs(db)
+
+# --- NEW OUTPUTS ROUTE ADDED HERE ---
+@app.get('/outputs')
+def list_outputs(db: Session = Depends(get_db)):
+    """Returns results for all successfully completed jobs for the Output screen."""
+    completed_jobs = db.query(Job).filter(Job.status == "completed").all()
+    
+    return {
+        job.job_id: {
+            "job_id": job.job_id,
+            "filename": job.filename,
+            "result": job.result,
+            "worker_id": job.worker_id,
+        }
+        for job in completed_jobs
+    }
 
 @app.get('/errors')
 def list_errors():
