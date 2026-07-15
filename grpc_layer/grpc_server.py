@@ -167,6 +167,48 @@ class WorkerServiceServicer(distributed_pb2_grpc.WorkerServiceServicer):
         print(f"Heartbeat checked\n")
         return distributed_pb2.HeartbeatResponse(acknowledged=True)
 
+def get_orchestrator_via_gateway():
+    """
+    WSL fallback — scans common IPs on the network to find the orchestrator.
+    Tries the gateway and nearby IPs on port 8000.
+    """
+    try:
+        # Get default gateway (Windows host IP in WSL)
+        result = subprocess.check_output(
+            "ip route | grep default | awk '{print $3}'",
+            shell=True
+        ).decode().strip()
+        
+        gateway = result.split('\n')[0].strip()
+        print(f"WSL gateway: {gateway}")
+        
+        # Get network prefix e.g. 192.168.1
+        prefix = ".".join(gateway.split(".")[:3])
+        
+        # Scan common IPs on the network for the orchestrator
+        print(f"Scanning {prefix}.0/24 for orchestrator on port 8000...")
+        for i in range(1, 255):
+            ip = f"{prefix}.{i}"
+            try:
+                response = requests.get(
+                    f"http://{ip}:8000/",
+                    timeout=0.3
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    if "Orchestrator" in str(data):
+                        print(f"Found Orchestrator at {ip}")
+                        return ip
+            except:
+                continue
+        
+        print("Could not find orchestrator on network.")
+        return None
+        
+    except Exception as e:
+        print(f"Gateway discovery failed: {e}")
+        return None
+        
 def find_orchestrator():
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -298,44 +340,3 @@ if __name__=="__main__":
         print("Exiting.")
         os._exit(0)
 
-def get_orchestrator_via_gateway():
-    """
-    WSL fallback — scans common IPs on the network to find the orchestrator.
-    Tries the gateway and nearby IPs on port 8000.
-    """
-    try:
-        # Get default gateway (Windows host IP in WSL)
-        result = subprocess.check_output(
-            "ip route | grep default | awk '{print $3}'",
-            shell=True
-        ).decode().strip()
-        
-        gateway = result.split('\n')[0].strip()
-        print(f"WSL gateway: {gateway}")
-        
-        # Get network prefix e.g. 192.168.1
-        prefix = ".".join(gateway.split(".")[:3])
-        
-        # Scan common IPs on the network for the orchestrator
-        print(f"Scanning {prefix}.0/24 for orchestrator on port 8000...")
-        for i in range(1, 255):
-            ip = f"{prefix}.{i}"
-            try:
-                response = requests.get(
-                    f"http://{ip}:8000/",
-                    timeout=0.3
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    if "Orchestrator" in str(data):
-                        print(f"Found Orchestrator at {ip}")
-                        return ip
-            except:
-                continue
-        
-        print("Could not find orchestrator on network.")
-        return None
-        
-    except Exception as e:
-        print(f"Gateway discovery failed: {e}")
-        return None
