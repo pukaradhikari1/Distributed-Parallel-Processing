@@ -60,10 +60,10 @@ app.include_router(auth.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],  
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods (GET, POST, DELETE, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 
 
@@ -145,7 +145,7 @@ def list_workers():
 def list_jobs(db: Session = Depends(get_db)):
     return get_all_jobs(db)
 
-# --- NEW OUTPUTS ROUTE ADDED HERE ---
+# ouotput route
 @app.get('/outputs')
 def list_outputs(db: Session = Depends(get_db)):
     """Returns results for all successfully completed jobs for the Output screen."""

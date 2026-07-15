@@ -18,12 +18,11 @@ from schemas import (
     SendOTPRequest, VerifyOTPRequest
 )
 
-
 from database import Base, get_db
 
 load_dotenv()
 
-# 1. DATABASE MODEL FOR USERS
+# creating database tabel model 
 class DBUser(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
@@ -31,7 +30,6 @@ class DBUser(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     
-    # Profile & Account Info
     display_name = Column(String, nullable=True)
     bio = Column(String, nullable=True)
     created_at = Column(String, default=lambda: datetime.utcnow().strftime("%B %d, %Y"))
@@ -46,14 +44,13 @@ class DBUser(Base):
     otp_expire_at = Column(DateTime, nullable=True)
 
 
-# 2. Email server config
+# email config thr env
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER", "your_email@gmail.com")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "your_app_password")
 
 def send_email_background(to_email: str, subject: str, body: str):
-    """Utility function to send an email. Runs in the background."""
     try:
         msg = EmailMessage()
         msg.set_content(body)
@@ -71,7 +68,7 @@ def send_email_background(to_email: str, subject: str, body: str):
         print(f"Failed to send email to {to_email}: {e}")
 
 
-# pass hashing 
+#password hashing
 def verify_password(plain_password, hashed_password):
     pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest().encode('utf-8')
     return bcrypt.checkpw(pre_hashed, hashed_password.encode('utf-8'))
@@ -82,7 +79,7 @@ def get_password_hash(password):
     return bcrypt.hashpw(pre_hashed, salt).decode('utf-8')
 
 
-# jwt config
+# jwt token 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 
@@ -116,7 +113,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-# routes 
+# FastAPI Routes
 router = APIRouter()
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -188,8 +185,7 @@ def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
     return {"message": "Email verified successfully"}
 
 
-# profil
-
+# pf and account management
 @router.get("/profile")
 def get_profile(current_user: DBUser = Depends(get_current_user)):
     return {
@@ -205,6 +201,7 @@ def get_profile(current_user: DBUser = Depends(get_current_user)):
         "max_workers": current_user.max_workers
     }
 
+
 @router.put("/profile")
 def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_db), current_user: DBUser = Depends(get_current_user)):
     current_user.display_name = profile_data.display_name
@@ -212,9 +209,9 @@ def update_profile(profile_data: ProfileUpdate, db: Session = Depends(get_db), c
     db.commit()
     return {"message": "Profile updated successfully"}
 
+
 @router.delete("/delete-account")
 def delete_account(current_user: DBUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Deletes the currently authenticated user's account from the database."""
     db.delete(current_user)
     db.commit()
     return {"message": "Account successfully deleted"}
