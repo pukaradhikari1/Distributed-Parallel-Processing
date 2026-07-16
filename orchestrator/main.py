@@ -67,6 +67,10 @@ def home():
 @app.post('/register-worker')
 def register(worker: Worker):
     register_worker(worker.dict())
+    print("NEW COMPUTE NODE ONLINE")
+    print(f"Node Name/ID: {worker.worker_id}")
+    print(f"IP Address:   {worker.ip}")
+    print(f"Hardware:     {worker.cores} Cores | {worker.ram} GB RAM")
     return {'message': 'Worker registered', 'workers': workers}
 
 @app.post('/heartbeat')
