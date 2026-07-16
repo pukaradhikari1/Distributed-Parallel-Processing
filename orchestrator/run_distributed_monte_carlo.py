@@ -35,17 +35,32 @@ import math
 import requests
 import os
 import sys
+import socket
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-grpc_path = os.path.abspath(os.path.join(current_dir, "..", "grpc_layer"))
-sys.path.append(grpc_path)
 
-import grpc_server
-
+def find_orchestrator():
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    client.bind(("", 50005))
+    client.settimeout(1.0)
+    print("Searching for Orchestrator signal...", end="")
+    while True:
+        try:
+            print(".", end="", flush=True)
+            data, addr = client.recvfrom(1024)
+            msg = data.decode()
+            if msg.startswith("ORCHESTRATOR:"):
+                ip=msg.split(":")[1]
+                print(f"Found Orchestrator at {ip}")
+                return ip
+        except socket.timeout: 
+            continue
+        
 # ---------------------------------------------------------------------------
 # CONFIG - edit these for your setup
 # ---------------------------------------------------------------------------
-ORCHESTRATOR_URL = "192.168.1.93"#find_orchestrator()  # <-- your orchestrator's IP
+ORCHESTRATOR_URL = f"http://{find_orchestrator()}:8000"  # <-- your orchestrator's IP
 USER_ID = "quant-user-1"
 JOB_NAME_PREFIX = "gbm_mc"
 
