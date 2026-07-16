@@ -11,17 +11,14 @@ from database import engine, Base, get_db
 import models 
 import auth   
 
-# Build all tables safely at startup
 Base.metadata.create_all(bind=engine)
 
-# Added Job to the imports here so the /outputs route can query the database
 from models import Worker, Heartbeat, Job
 from workers import workers, register_worker, update_heartbeat, get_available_worker
-from jobs import create_job, assign_job, get_all_jobs
+from jobs import create_job, assign_job, assign_job_shard, get_all_jobs
 from dispatcher import dispatch_job
 from monitor import monitor_workers
 from errors import get_all_errors
-
 
 async def broadcast_presence():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -44,7 +41,6 @@ async def broadcast_presence():
             pass
         await asyncio.sleep(3)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Orchestrator starting up background tasks...")
@@ -53,10 +49,8 @@ async def lifespan(app: FastAPI):
     yield 
     print("Orchestrator shutting down...")
 
-
 app = FastAPI(lifespan=lifespan)
 app.include_router(auth.router)
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,7 +59,6 @@ app.add_middleware(
     allow_methods=["*"],  
     allow_headers=["*"],  
 )
-
 
 @app.get('/')
 def home():
@@ -88,7 +81,8 @@ async def submit_job(
     background_tasks: BackgroundTasks, 
     user_id: str = Form(...),
     job_name: str = Form(...),
-    worker_count: int = Form(1),  # <-- Multi-worker capability enabled here
+    worker_count: int = Form(1),
+    job_type: str = Form("standard"),
     notes: Optional[str] = Form(None),     
     script_file: UploadFile = File(...),
     data_file: Optional[UploadFile] = File(None),
@@ -114,11 +108,14 @@ async def submit_job(
         with open(weights_path, "wb") as f:
             f.write(await weights_file.read())
 
-    job_id = create_job(db, user_id, job_name, script_path, data_path, weights_path)
+    job_id = create_job(db, user_id, job_name, script_path, data_path, weights_path, job_type)
     
-    # ---------------------------------------------------------
-    # MULTI-WORKER CLUSTER SELECTION
-    # ---------------------------------------------------------
+    # Register total shards in the database
+    job_record = db.query(Job).filter(Job.job_id == job_id).first()
+    if job_record:
+        job_record.total_shards = worker_count
+        db.commit()
+    
     available_workers = [
         w_id for w_id, w_data in workers.items() 
         if w_data.get('current_job') is None
@@ -135,10 +132,9 @@ async def submit_job(
     cluster_ips = [workers[w_id]['ip'] for w_id in selected_workers]
 
     for index, worker_id in enumerate(selected_workers):
-        assign_job(db, job_id, worker_id) 
+        assign_job_shard(db, job_id, worker_id, index) 
         workers[worker_id]['current_job'] = job_id
         
-        # Passes the critical cluster_ips and index to dispatcher.py
         background_tasks.add_task(dispatch_job, job_id, worker_id, cluster_ips, index)
 
     return {
@@ -160,9 +156,7 @@ def list_jobs(db: Session = Depends(get_db)):
 
 @app.get('/outputs')
 def list_outputs(db: Session = Depends(get_db)):
-    """Returns results for all successfully completed jobs for the Output screen."""
     completed_jobs = db.query(Job).filter(Job.status == "completed").all()
-    
     return {
         job.job_id: {
             "job_id": job.job_id,

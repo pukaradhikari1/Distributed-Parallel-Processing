@@ -1,45 +1,51 @@
-import uuid
-from sqlalchemy.orm import Session
-from models import Job 
+from pydantic import BaseModel
+from typing import Optional
+import time
+from sqlalchemy import Column, String, Float, Integer, ForeignKey
+from database import Base 
 
-def create_job(db: Session, user_id: str, filename: str, script_path: str, data_path: str = None, weights_path: str = None):
-    job_id = str(uuid.uuid4())
-    new_job = Job(
-        job_id=job_id, user_id=user_id, filename=filename, status="queued",
-        worker_id=None, script_path=script_path, data_path=data_path, weights_path=weights_path
-    )
-    db.add(new_job)
-    db.commit()
-    db.refresh(new_job)
-    return job_id
+class Worker(BaseModel):
+    worker_id: str
+    ip: str
+    cores: int
+    ram: int
 
-def assign_job(db: Session, job_id: str, worker_id: str):
-    job = db.query(Job).filter(Job.job_id == job_id).first()
-    if job:
-        job.worker_id = worker_id
-        job.status = "running"
-        db.commit()
+class Heartbeat(BaseModel):
+    worker_id: Optional[str] = None
+    hardware_id: Optional[str] = None
+    display_name: Optional[str] = None
+    os: Optional[str] = None
+    cpu_cores: Optional[int] = None
+    ram_gb: Optional[int] = None
+    cpu_percent: Optional[float] = None
+    ram_percent: Optional[float] = None
+    gpu_percent: Optional[float] = None  
+    timestamp: Optional[float] = None
 
-def complete_job(db: Session, job_id: str, result: str):
-    job = db.query(Job).filter(Job.job_id == job_id).first()
-    if job:
-        job.status = "completed"
-        job.result = result
-        db.commit()
+class Job(Base):
+    __tablename__ = "jobs"
+    job_id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id")) 
+    filename = Column(String)
+    
+    job_type = Column(String, default="standard") 
+    total_shards = Column(Integer, default=1)
+    
+    status = Column(String, default="queued")
+    worker_id = Column(String, nullable=True)
+    result = Column(String, nullable=True)
+    error = Column(String, nullable=True)
+    script_path = Column(String)
+    data_path = Column(String, nullable=True)
+    weights_path = Column(String, nullable=True)
+    created_at = Column(Float, default=time.time)
 
-def fail_job(db: Session, job_id: str, error: str):
-    job = db.query(Job).filter(Job.job_id == job_id).first()
-    if job:
-        job.status = "failed"
-        job.error = error
-        db.commit()
-
-def requeue_job(db: Session, job_id: str):
-    job = db.query(Job).filter(Job.job_id == job_id).first()
-    if job:
-        job.status = "queued"
-        job.worker_id = None
-        db.commit()
-
-def get_all_jobs(db: Session):
-    return db.query(Job).all()
+class JobShard(Base):
+    __tablename__ = "job_shards"
+    shard_id = Column(String, primary_key=True, index=True)
+    job_id = Column(String, ForeignKey("jobs.job_id"))
+    worker_id = Column(String)
+    shard_index = Column(Integer)
+    status = Column(String, default="running")
+    result = Column(String, nullable=True)
+    error = Column(String, nullable=True)

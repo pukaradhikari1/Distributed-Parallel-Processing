@@ -1,6 +1,6 @@
 import os
 import sys
-import grpc
+import grpc #type:ignore
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 grpc_path = os.path.abspath(os.path.join(current_dir, "..", "grpc_layer"))
@@ -30,7 +30,7 @@ def send_task_to_worker(worker_ip, job_id, shard_index, script_bytes, data_bytes
     )
 
     try:
-        # INCREASED TIMEOUT TO 3600 SECONDS (1 HOUR) FOR HEAVY ML TRAINING
+        # TIMEOUT: 3600 SECONDS (1 HOUR) FOR ML TRAINING
         result = stub.ExecuteTask(payload, timeout=3600)
         return result
 

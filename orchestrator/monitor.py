@@ -12,14 +12,13 @@ async def monitor_workers():
     while True:
         current_time = time.time()
 
-        for worker_id, worker in workers.items():
+        for worker_id, worker in list(workers.items()):
             if current_time - worker['last_seen'] > 30:
                 if worker['status'] != 'offline':
                     print(f"Worker {worker_id} went offline")
                     log_error(worker_id=worker_id, severity="high", message="Heartbeat timeout")
                 
                 worker['status'] = 'offline'
-
                 
                 db = SessionLocal()
                 try:
@@ -33,7 +32,11 @@ async def monitor_workers():
                             assign_job(db, job.job_id, new_worker)
                             workers[new_worker]['current_job'] = job.job_id
                             print(f"Job {job.job_id} reassigned to {new_worker}")
-                            asyncio.to_thread(dispatch_job, job.job_id, new_worker)
+                            
+                            new_worker_ip = workers[new_worker]['ip']
+                            asyncio.create_task(asyncio.to_thread(
+                                dispatch_job, job.job_id, new_worker, [new_worker_ip], 0
+                            ))
                 finally:
                     db.close()
 
