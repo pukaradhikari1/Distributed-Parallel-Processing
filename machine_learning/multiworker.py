@@ -13,7 +13,7 @@ import numpy as np
 strategy = tf.distribute.MultiWorkerMirroredStrategy()
 
 # Scaling batch size by number of workers
-per_worker_batch_size = 64
+per_worker_batch_size = 16
 num_workers = strategy.num_replicas_in_sync
 global_batch_size = per_worker_batch_size * num_workers
 
