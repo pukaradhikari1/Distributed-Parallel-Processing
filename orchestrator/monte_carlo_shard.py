@@ -38,18 +38,43 @@ def run_shard(config: dict) -> dict:
     seed = int(config["seed"])                   # MUST differ per shard
     strike = float(config.get("strike", S0))      # threshold for "success"
 
-    rng = np.random.default_rng(seed)
-    z = rng.standard_normal(num_simulations)
+    # Bound memory: never materialize the full num_simulations array at
+    # once. Instead walk through it in fixed-size batches and only keep
+    # running scalar accumulators. This is what lets a shard scale from
+    # 100K to 500M+ simulations with the same, flat memory footprint.
+    batch_size = int(config.get("batch_size", 2_000_000))
+
+    # Each batch needs its own independent random stream -- SeedSequence
+    # spawn makes each batch's stream reproducible and, if you ever want
+    # to split a shard further, trivially parallelizable.
+    seed_seq = np.random.SeedSequence(seed)
 
     drift = (mu - 0.5 * sigma ** 2) * T
-    diffusion = sigma * np.sqrt(T) * z
-    s_t = S0 * np.exp(drift + diffusion)
+    vol_term = sigma * np.sqrt(T)
 
-    # Local compilation to minimize what has to travel back over gRPC/HTTP:
-    # only send sufficient statistics, not the raw per-trial array.
-    partial_sum = float(np.sum(s_t))
-    partial_sum_sq = float(np.sum(s_t ** 2))
-    successful_trials = int(np.sum(s_t > strike))
+    partial_sum = 0.0
+    partial_sum_sq = 0.0
+    successful_trials = 0
+    remaining = num_simulations
+    batch_idx = 0
+
+    while remaining > 0:
+        this_batch = min(batch_size, remaining)
+        batch_rng = np.random.default_rng(seed_seq.spawn(1)[0])
+
+        z = batch_rng.standard_normal(this_batch)
+        s_t = S0 * np.exp(drift + vol_term * z)
+
+        partial_sum += float(np.sum(s_t))
+        partial_sum_sq += float(np.sum(s_t ** 2))
+        successful_trials += int(np.sum(s_t > strike))
+
+        del z, s_t
+        remaining -= this_batch
+        batch_idx += 1
+
+        done = num_simulations - remaining
+        print(f"[shard] batch {batch_idx}: {done:,}/{num_simulations:,} done", flush=True)
 
     return {
         "shard_seed": seed,

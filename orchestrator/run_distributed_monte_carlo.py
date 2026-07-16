@@ -33,8 +33,6 @@ import json
 import time
 import math
 import requests
-import os
-import sys
 import socket
 
 
@@ -57,10 +55,11 @@ def find_orchestrator():
         except socket.timeout: 
             continue
         
+
 # ---------------------------------------------------------------------------
 # CONFIG - edit these for your setup
 # ---------------------------------------------------------------------------
-ORCHESTRATOR_URL = f"http://{find_orchestrator()}:8000"  # <-- your orchestrator's IP
+ORCHESTRATOR_URL = f"http://{find_orchestrator()}:8000"    # <-- your orchestrator's IP
 USER_ID = "quant-user-1"
 JOB_NAME_PREFIX = "gbm_mc"
 
@@ -71,6 +70,15 @@ SIGMA = 0.20                     # annualized volatility
 T = 1.0                          # horizon in years
 STRIKE = 100.0                   # "success" threshold, e.g. option strike
 BASE_SEED = 1000                 # each shard gets BASE_SEED + shard_index
+
+# Memory control. A shard holds at most BATCH_SIZE trials in RAM at once
+# (see monte_carlo_shard.py) regardless of its total size, so raising
+# these mainly trades wall-clock time vs. how many rounds get scheduled.
+# MAX_SIMS_PER_SHARD caps how big any single job gets: if
+# TOTAL_SIMULATIONS / num_workers exceeds it, work is split into more,
+# smaller shards and run over multiple rounds instead of one giant shard.
+MAX_SIMS_PER_SHARD = 5_000_000
+BATCH_SIZE = 2_000_000            # in-shard chunk size passed to the worker
 
 POLL_INTERVAL_SEC = 3
 POLL_TIMEOUT_SEC = 600
@@ -97,6 +105,7 @@ def submit_shard(shard_index, num_simulations, seed):
         "T": T,
         "strike": STRIKE,
         "seed": seed,
+        "batch_size": BATCH_SIZE,
     }
 
     with open(SCRIPT_PATH, "rb") as f:
@@ -172,10 +181,15 @@ def run():
 
     print(f"Found {len(idle)} idle worker(s) online.")
 
-    # Decide shard count: don't make more shards than makes sense, but
-    # also don't starve workers -- one shard per idle worker per round,
-    # sized so total adds up to TOTAL_SIMULATIONS.
+    # Decide shard count. Start from one shard per idle worker, but if
+    # that would make any shard bigger than MAX_SIMS_PER_SHARD, split
+    # into more (smaller) shards instead -- those extra shards just run
+    # in a later round once a worker frees up, rather than one worker
+    # sitting on a multi-GB-scale job.
     num_shards = max(len(idle), 1)
+    while TOTAL_SIMULATIONS / num_shards > MAX_SIMS_PER_SHARD:
+        num_shards += len(idle)
+
     base = TOTAL_SIMULATIONS // num_shards
     remainder = TOTAL_SIMULATIONS % num_shards
     shard_sizes = [base + (1 if i < remainder else 0) for i in range(num_shards)]
