@@ -3,6 +3,7 @@ import hashlib
 import bcrypt
 import random
 import smtplib
+import uuid
 from email.message import EmailMessage
 from datetime import datetime, timedelta
 
@@ -25,7 +26,10 @@ load_dotenv()
 # creating database tabel model 
 class DBUser(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
+    
+    # CRITICAL FIX: Generates a unique string to match your Job table's foreign key
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
@@ -141,6 +145,13 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
+        )
+        
+    # --- THE MISSING VERIFICATION GUARDRAIL ---
+    if not db_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account not verified. Please verify your email using the OTP sent to you before logging in."
         )
     
     access_token = create_access_token(data={"sub": db_user.username})
