@@ -87,7 +87,8 @@ def heartbeat(data: Heartbeat):
 async def submit_job(
     background_tasks: BackgroundTasks, 
     user_id: str = Form(...),
-    job_name: str = Form(...),             
+    job_name: str = Form(...),
+    worker_count: int = Form(1),  # <-- Multi-worker capability enabled here
     notes: Optional[str] = Form(None),     
     script_file: UploadFile = File(...),
     data_file: Optional[UploadFile] = File(None),
@@ -114,27 +115,39 @@ async def submit_job(
             f.write(await weights_file.read())
 
     job_id = create_job(db, user_id, job_name, script_path, data_path, weights_path)
-    worker_id = get_available_worker()
+    
+    # ---------------------------------------------------------
+    # MULTI-WORKER CLUSTER SELECTION
+    # ---------------------------------------------------------
+    available_workers = [
+        w_id for w_id, w_data in workers.items() 
+        if w_data.get('current_job') is None
+    ]
 
-    if not worker_id:
+    if len(available_workers) < worker_count:
         return {
             'job_id': job_id,
-            'status': 'queued',
-            'assigned_worker': None,
-            'message': 'No worker available right now. Saved to queue.'
+            'status': 'failed',
+            'message': f'Not enough workers available. Requested {worker_count}, but only {len(available_workers)} are free.'
         }
 
-    assign_job(db, job_id, worker_id)
-    workers[worker_id]['current_job'] = job_id
-    
-    background_tasks.add_task(dispatch_job, job_id, worker_id)
+    selected_workers = available_workers[:worker_count]
+    cluster_ips = [workers[w_id]['ip'] for w_id in selected_workers]
+
+    for index, worker_id in enumerate(selected_workers):
+        assign_job(db, job_id, worker_id) 
+        workers[worker_id]['current_job'] = job_id
+        
+        # Passes the critical cluster_ips and index to dispatcher.py
+        background_tasks.add_task(dispatch_job, job_id, worker_id, cluster_ips, index)
 
     return {
         'job_id': job_id,
         'job_name': job_name,
         'status': 'running',
-        'assigned_worker': worker_id,
-        'message': 'Job dispatched in the background'
+        'assigned_workers': selected_workers,
+        'cluster_ips': cluster_ips,
+        'message': f'Distributed job successfully dispatched to {worker_count} workers!'
     }
 
 @app.get('/workers')
@@ -145,7 +158,6 @@ def list_workers():
 def list_jobs(db: Session = Depends(get_db)):
     return get_all_jobs(db)
 
-# ouotput route
 @app.get('/outputs')
 def list_outputs(db: Session = Depends(get_db)):
     """Returns results for all successfully completed jobs for the Output screen."""

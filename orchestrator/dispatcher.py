@@ -1,10 +1,12 @@
+import json
 from grpc_client import send_task_to_worker
 from jobs import complete_job, fail_job
 from workers import workers
 from database import SessionLocal
 from models import Job
 
-def dispatch_job(job_id: str, worker_id: str):
+# UPDATED to accept the full cluster list and this specific worker's index
+def dispatch_job(job_id: str, worker_id: str, cluster_ips: list, worker_index: int):
     db = SessionLocal()
     try:
         worker_ip = workers[worker_id]['ip']
@@ -14,7 +16,30 @@ def dispatch_job(job_id: str, worker_id: str):
             return
 
         with open(job.script_path, 'rb') as f:
-            script_bytes = f.read()
+            original_script_bytes = f.read()
+            
+        # ---------------------------------------------------------
+        # THE MAGIC TRICK: INJECTING TF_CONFIG DIRECTLY INTO THE SCRIPT
+        # ---------------------------------------------------------
+        # We assign port 12345 to all workers for TensorFlow cross-talk
+        cluster_list = [f"{ip}:12345" for ip in cluster_ips]
+        
+        tf_config_dict = {
+            "cluster": {"worker": cluster_list},
+            "task": {"type": "worker", "index": worker_index}
+        }
+        
+        # Write the python code to set the environment variable
+        injection_code = f"""
+import os
+import json
+os.environ['TF_CONFIG'] = json.dumps({tf_config_dict})
+
+# --- ORIGINAL SCRIPT BELOW ---
+"""
+        # Glue the injection to the top of the original script
+        script_bytes = injection_code.encode('utf-8') + original_script_bytes
+        # ---------------------------------------------------------
         
         data_bytes = b""
         if job.data_path:
@@ -27,7 +52,7 @@ def dispatch_job(job_id: str, worker_id: str):
                 weight_bytes = f.read()
 
         response = send_task_to_worker(
-            worker_ip=worker_ip, job_id=job_id, shard_index=0,
+            worker_ip=worker_ip, job_id=job_id, shard_index=worker_index,
             script_bytes=script_bytes, data_bytes=data_bytes, model_weights_bytes=weight_bytes
         )
 
