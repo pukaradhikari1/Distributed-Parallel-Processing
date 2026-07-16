@@ -9,6 +9,8 @@ import { View } from 'react-native';
 import RootNavigator from './src/navigation/RootNavigator';
 import { darkTheme, lightTheme } from './src/theme/theme';
 import { useAuthStore } from './src/store/useAuthStore';
+import { configureGoogleSignIn } from './src/services/googleAuth';
+
 
 export default function App() {
   const scheme = useColorScheme();
@@ -20,6 +22,7 @@ export default function App() {
   const isHydrated = useAuthStore(s => s.isHydrated);
 
   useEffect(() => {
+    configureGoogleSignIn();
     hydrate();
   }, []);
 

@@ -7,9 +7,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../store/useAuthStore';
 
-const GOOGLE_WEB_CLIENT_ID = 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
-const GOOGLE_IOS_CLIENT_ID = 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com'; // iOS only
-const BACKEND_URL = 'https://YOUR_BACKEND_URL'; // e.g. https://api.yourdomain.com
+const GOOGLE_WEB_CLIENT_ID = '1090983687872-rqdjbd73qv803art7j4p4l4l15a95smv.apps.googleusercontent.com';
+const GOOGLE_IOS_CLIENT_ID = '1090983687872-rqdjbd73qv803art7j4p4l4l15a95smv.apps.googleusercontent.com'; // iOS only
+const BACKEND_URL = 'http://10.0.2.2:8000'; // Android emulator → host machine. Use your real IP or domain for a physical device.
 const STORAGE_KEY = 'dpdash.auth';
 
 export function configureGoogleSignIn() {
@@ -24,14 +24,29 @@ export async function googleSignIn(): Promise<void> {
     // 1. Make sure Google Play Services are available (Android)
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
-    // 2. Trigger the Google sign-in UI
-    const userInfo = await GoogleSignin.signIn();
+    // 2. Trigger the Google sign-in UI.
+    //    NOTE: newer versions of @react-native-google-signin/google-signin
+    //    (v13+) return the idToken directly inside this response, under
+    //    `response.data.idToken`. Older versions returned the user info
+    //    directly with `idToken` at the top level. We read the idToken
+    //    straight from this result instead of calling GoogleSignin.getTokens()
+    //    afterward — that separate call was throwing
+    //    "getTokens requires a user to be signed in" because it checks a
+    //    signed-in state that doesn't reliably sync immediately after signIn()
+    //    resolves.
+    const signInResult: any = await GoogleSignin.signIn();
 
-    // 3. Get the ID token to send to your backend
-    const { idToken } = await GoogleSignin.getTokens();
+    const idToken: string | null =
+        signInResult?.data?.idToken ?? // v13+ shape
+        signInResult?.idToken ??       // older shape
+        null;
+
     if (!idToken) throw new Error('Google sign-in returned no ID token');
 
-    // 4. Send the ID token to your backend for verification
+    // Pull display name/photo from whichever shape this version returned
+    const googleUser = signInResult?.data?.user ?? signInResult?.user ?? null;
+
+    // 3. Send the ID token to your backend for verification
     //    Your backend should verify it with Google, create/find the user,
     //    and return your own access token.
     const response = await fetch(`${BACKEND_URL}/auth/google`, {
@@ -45,22 +60,22 @@ export async function googleSignIn(): Promise<void> {
         throw new Error(err.detail ?? err.message ?? 'Google sign-in failed');
     }
 
-    // 5. Expected response shape from your backend:
+    // 4. Expected response shape from your backend:
     //    { user: { id, username, email }, tokens: { accessToken } }
     const { user, tokens } = await response.json();
 
-    // 6. Build a basic profile from the Google user info
+    // 5. Build a basic profile from the Google user info
     const profile = {
-        displayName: (userInfo as any)?.user?.name ?? user.username,
-        avatarUrl: (userInfo as any)?.user?.photo ?? undefined,
+        displayName: googleUser?.name ?? user.username,
+        avatarUrl: googleUser?.photo ?? undefined,
         isPremium: false,
         createdAt: new Date().toISOString(),
     };
 
-    // 7. Persist to AsyncStorage (same key used by useAuthStore)
+    // 6. Persist to AsyncStorage (same key used by useAuthStore)
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ user, tokens, profile }));
 
-    // 8. Hydrate the auth store so the app reacts immediately
+    // 7. Hydrate the auth store so the app reacts immediately
     useAuthStore.setState({ user, tokens, profile });
 }
 

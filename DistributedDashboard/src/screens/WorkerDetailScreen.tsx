@@ -11,6 +11,11 @@ import EmptyState from '../components/EmptyState';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkerDetail'>;
 
+// How often to re-fetch while this screen is open, so CPU/RAM/GPU numbers
+// update live instead of only on pull-to-refresh. Matches the worker
+// script's own heartbeat interval (it posts vitals every 4s).
+const LIVE_POLL_MS = 4000;
+
 function AnimatedCard({ children, delay = 0, style }: { children: React.ReactNode; delay?: number; style?: any }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
@@ -30,6 +35,15 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
   const workerErrors = errors.filter(e => e.workerId === workerId);
 
   useEffect(() => { fetchErrors(workerId); }, [workerId]);
+
+  // Real-time updates: poll fetchWorkers() on an interval while this screen
+  // is mounted, so CPU/RAM/GPU usage and last-heartbeat time stay live.
+  useEffect(() => {
+    const handle = setInterval(() => {
+      fetchWorkers();
+    }, LIVE_POLL_MS);
+    return () => clearInterval(handle);
+  }, []);
 
   const onRefresh = () => { fetchWorkers(); fetchErrors(workerId); };
 
@@ -71,6 +85,8 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
         <Card mode="contained">
           <Card.Content>
             <Text variant="titleMedium" style={styles.sectionTitle}>Hardware</Text>
+            <DetailRow label="Display name" value={worker.name} />
+            <DetailRow label="OS" value={worker.os ?? 'Unknown'} />
             <DetailRow label="CPU cores" value={`${worker.cpu.cores}`} />
             <DetailRow label="RAM" value={`${(worker.ram.usedMB / 1024).toFixed(1)} / ${(worker.ram.totalMB / 1024).toFixed(1)} GB`} />
             {worker.gpu ? (
@@ -80,7 +96,7 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
                   <DetailRow label="VRAM" value={`${(worker.gpu.vramUsedMB / 1024).toFixed(1)} / ${(worker.gpu.vramTotalMB / 1024).toFixed(1)} GB`} />
                 )}
               </>
-            ) : <DetailRow label="GPU" value="None" />}
+            ) : <DetailRow label="GPU" value="None detected" />}
           </Card.Content>
         </Card>
       </AnimatedCard>

@@ -88,11 +88,11 @@ export interface Workload {
 export interface WorkloadOutput {
   id: string;
   workloadId: string;
-  workerId: string;
   workerName: string;
-  result: string;
   durationMs: number;
   completedAt: string;
+  result: string;          // raw text/log — always present
+  taskType?: string;       // optional hint from backend: 'ml' | 'script' | 'data' | etc.
 }
 
 export interface WorkerError {

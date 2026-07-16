@@ -1,5 +1,4 @@
-// src/screens/ProfileScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -19,11 +18,13 @@ import {
 } from '../store/useAuthStore';
 
 export default function ProfileScreen() {
+  // 1. SELECTORS (Store Hooks)
   const user = useAuthStore(selectUser);
   const profile = useAuthStore(selectProfile);
   const isPremium = useAuthStore(selectIsPremium);
   const memberSince = useAuthStore(selectMemberSince);
   const displayName = useAuthStore(selectDisplayName);
+
   const isLoading = useAuthStore(s => s.isLoading);
   const isProfileLoading = useAuthStore(s => s.isProfileLoading);
   const logout = useAuthStore(s => s.logout);
@@ -31,18 +32,67 @@ export default function ProfileScreen() {
   const updateProfile = useAuthStore(s => s.updateProfile);
   const error = useAuthStore(s => s.error);
 
+  // 2. STATE HOOKS
   const [editing, setEditing] = useState(false);
-  const [editName, setEditName] = useState(profile?.displayName ?? '');
-  const [editBio, setEditBio] = useState(profile?.bio ?? '');
+  const [editName, setEditName] = useState('');
+  const [editBio, setEditBio] = useState('');
 
-  const formattedDate = memberSince
-    ? new Date(memberSince).toLocaleDateString(undefined, {
-      year: 'numeric', month: 'long', day: 'numeric',
-    })
-    : '—';
+  // 3. EFFECT HOOKS
+  // Sync local edit state with profile data when it loads from the server
+  useEffect(() => {
+    if (profile) {
+      setEditName(profile.displayName ?? '');
+      setEditBio('');
+    }
+  }, [profile]);
 
+  // 4. MEMO HOOKS
+  // Fixes "Invalid Date" by handling Firebase timestamps or ISO strings
+  const formattedDate = useMemo(() => {
+    if (!memberSince) return '—';
+    try {
+      let d;
+      if (
+        typeof memberSince === 'object' &&
+        memberSince !== null &&
+        'seconds' in memberSince
+      ) {
+        // Handle Firebase Timestamp
+        const timestamp = memberSince as { seconds: number; nanoseconds?: number };
+        d = new Date(timestamp.seconds * 1000);
+      } else {
+        // Handle String or Number
+        d = new Date(memberSince as string | number);
+      }
+
+      if (isNaN(d.getTime())) return '—';
+
+      return d.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    } catch (e) {
+      return '—';
+    }
+  }, [memberSince]);
+
+  // Generates safe initials for the Avatar
+  const initials = useMemo(() => {
+    return (displayName || user?.username || 'U')
+      .split(' ')
+      .filter(Boolean)
+      .map((p: string) => p[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  }, [displayName, user?.username]);
+
+  // 5. HANDLER FUNCTIONS
   const handleSave = async () => {
-    const ok = await updateProfile({ displayName: editName.trim(), bio: editBio.trim() });
+    const ok = await updateProfile({
+      displayName: editName.trim()
+    });
     if (ok) setEditing(false);
   };
 
@@ -64,13 +114,7 @@ export default function ProfileScreen() {
     );
   };
 
-  const initials = displayName
-    .split(' ')
-    .map(p => p[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-
+  // 6. RENDER LOGIC
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -78,15 +122,11 @@ export default function ProfileScreen() {
     >
       <ScrollView contentContainerStyle={styles.container}>
 
-        {/* ── Avatar + name ── */}
+        {/* ── Avatar Section ── */}
         <View style={styles.avatarSection}>
-          {profile?.avatarUrl ? (
-            <Avatar.Image size={88} source={{ uri: profile.avatarUrl }} />
-          ) : (
-            <Avatar.Text size={88} label={initials} />
-          )}
-          <Text variant="headlineSmall" style={styles.name}>{displayName}</Text>
-          <Text variant="bodyMedium" style={styles.subtle}>@{user?.username}</Text>
+          <Avatar.Text size={88} label={initials} />
+          <Text variant="headlineSmall" style={styles.name}>{displayName || 'User'}</Text>
+          <Text variant="bodyMedium" style={styles.subtle}>@{user?.username || 'username'}</Text>
           {isPremium && (
             <Chip icon="star" style={styles.premiumChip} textStyle={styles.premiumText} compact>
               Premium Member
@@ -94,7 +134,7 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* ── Account info card ── */}
+        {/* ── Account Info Card ── */}
         <Card style={styles.card} mode="contained">
           <Card.Title title="Account Info" titleVariant="titleMedium" />
           <Card.Content>
@@ -105,16 +145,10 @@ export default function ProfileScreen() {
             <InfoRow label="Member since" value={formattedDate} />
             <Divider style={styles.divider} />
             <InfoRow label="Plan" value={isPremium ? '⭐ Premium' : 'Free'} />
-            {profile?.bio ? (
-              <>
-                <Divider style={styles.divider} />
-                <InfoRow label="Bio" value={profile.bio} />
-              </>
-            ) : null}
           </Card.Content>
         </Card>
 
-        {/* ── Edit profile card ── */}
+        {/* ── Edit Profile Card ── */}
         <Card style={styles.card} mode="contained">
           <Card.Title title="Edit Profile" titleVariant="titleMedium" />
           <Card.Content>
@@ -136,41 +170,30 @@ export default function ProfileScreen() {
                   numberOfLines={3}
                   style={styles.input}
                 />
-                {error ? (
-                  <Text variant="bodySmall" style={styles.errorText}>{error}</Text>
-                ) : null}
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
                 <View style={styles.editActions}>
                   <Button
                     mode="contained"
                     onPress={handleSave}
                     loading={isProfileLoading}
-                    disabled={isProfileLoading || !editName.trim()}
                     style={styles.saveBtn}
                   >
                     Save
                   </Button>
-                  <Button
-                    mode="outlined"
-                    onPress={() => { setEditing(false); setEditName(profile?.displayName ?? ''); setEditBio(profile?.bio ?? ''); }}
-                    disabled={isProfileLoading}
-                  >
+                  <Button mode="outlined" onPress={() => setEditing(false)}>
                     Cancel
                   </Button>
                 </View>
               </>
             ) : (
-              <Button
-                mode="outlined"
-                icon="pencil"
-                onPress={() => { setEditing(true); setEditName(profile?.displayName ?? ''); setEditBio(profile?.bio ?? ''); }}
-              >
+              <Button mode="outlined" icon="pencil" onPress={() => setEditing(true)}>
                 Edit display name &amp; bio
               </Button>
             )}
           </Card.Content>
         </Card>
 
-        {/* ── Cluster stats card ── */}
+        {/* ── Cluster Access Card ── */}
         <Card style={styles.card} mode="contained">
           <Card.Title title="Cluster Access" titleVariant="titleMedium" />
           <Card.Content>
@@ -182,7 +205,7 @@ export default function ProfileScreen() {
           </Card.Content>
         </Card>
 
-        {/* ── Actions ── */}
+        {/* ── Action Buttons ── */}
         <Card style={styles.card} mode="contained">
           <Card.Title title="Account Actions" titleVariant="titleMedium" />
           <Card.Content style={styles.actionsContent}>
@@ -191,7 +214,6 @@ export default function ProfileScreen() {
               icon="logout"
               onPress={handleLogout}
               disabled={isLoading}
-              style={styles.actionBtn}
             >
               Log out
             </Button>
@@ -200,7 +222,6 @@ export default function ProfileScreen() {
               icon="delete-forever"
               onPress={handleDelete}
               disabled={isLoading}
-              style={[styles.actionBtn, styles.deleteBtn]}
               buttonColor="#ef4444"
               textColor="#fff"
             >
@@ -217,6 +238,7 @@ export default function ProfileScreen() {
   );
 }
 
+// Sub-component for clean layout rows
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoRow}>
@@ -236,14 +258,17 @@ const styles = StyleSheet.create({
   premiumText: { color: '#f59e0b', fontWeight: '700' },
   card: { marginBottom: 16 },
   divider: { marginVertical: 6 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 2 },
-  infoValue: { fontWeight: '500', flex: 1, textAlign: 'right' },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 2
+  },
+  infoValue: { fontWeight: '500', flex: 1, textAlign: 'right', marginLeft: 10 },
   input: { marginBottom: 12 },
   editActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   saveBtn: { flex: 1 },
-  errorText: { color: '#ef4444', marginBottom: 8 },
+  errorText: { color: '#ef4444', marginBottom: 8, fontSize: 12 },
   actionsContent: { gap: 10 },
-  actionBtn: { paddingVertical: 2 },
-  deleteBtn: { marginTop: 2 },
   version: { textAlign: 'center', opacity: 0.35, marginTop: 8 },
 });

@@ -1,9 +1,9 @@
 // src/navigation/RootNavigator.tsx
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { IconButton } from 'react-native-paper';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import OTPScreen from '../screens/OTPScreen';       // ← NEW
 import MainTabNavigator from './MainTabNavigator';
 import WorkerDetailScreen from '../screens/WorkerDetailScreen';
 import MasterNodeScreen from '../screens/MasterNodeScreen';
@@ -21,16 +21,15 @@ export default function RootNavigator() {
       {!isAuthenticated ? (
         <>
           <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen
-            name="Register"
-            component={RegisterScreen}
-            options={({ navigation }) => ({
+          <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen                                    // ← NEW
+            name="OTP"
+            component={OTPScreen}
+            options={{
               headerShown: true,
-              title: 'Create Account',
-              headerLeft: () => (
-                <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
-              ),
-            })}
+              title: 'Verify Email',
+              headerBackTitle: 'Register',
+            }}
           />
         </>
       ) : (
@@ -39,35 +38,17 @@ export default function RootNavigator() {
           <Stack.Screen
             name="WorkerDetail"
             component={WorkerDetailScreen}
-            options={({ navigation }) => ({
-              headerShown: true,
-              title: 'Worker Details',
-              headerLeft: () => (
-                <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
-              ),
-            })}
+            options={{ headerShown: true, title: 'Worker Details' }}
           />
           <Stack.Screen
             name="MasterNode"
             component={MasterNodeScreen}
-            options={({ navigation }) => ({
-              headerShown: true,
-              title: 'Orchestrator',
-              headerLeft: () => (
-                <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
-              ),
-            })}
+            options={{ headerShown: true, title: 'Orchestrator' }}
           />
           <Stack.Screen
             name="Reassignment"
             component={ReassignmentScreen}
-            options={({ navigation }) => ({
-              headerShown: true,
-              title: 'Reassign Workload',
-              headerLeft: () => (
-                <IconButton icon="arrow-left" onPress={() => navigation.goBack()} />
-              ),
-            })}
+            options={{ headerShown: true, title: 'Reassign Workload' }}
           />
         </>
       )}

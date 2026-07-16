@@ -1,6 +1,7 @@
 // src/store/useClusterStore.ts
 import { create } from 'zustand';
 import { clusterApi } from '../services/apiClient';
+import { useAuthStore } from './useAuthStore';
 import {
   MasterNode,
   ThroughputSample,
@@ -27,7 +28,18 @@ interface ClusterState {
   fetchOutputs: () => Promise<void>;
   fetchErrors: (workerId?: string) => Promise<void>;
   refreshAll: () => Promise<void>;
-  submitWorkload: (input: { name: string; type: string; payload: string; priority: 'low' | 'normal' | 'high' }) => Promise<Workload | null>;
+  submitWorkload: (input: {
+    name: string;
+    type: string;
+    payload: string;
+    priority: 'low' | 'normal' | 'high';
+    pyFileUri?: string;
+    pyFileName?: string;
+    zipFileUri?: string;
+    zipFileName?: string;
+    notes?: string;
+    workerCount?: number;
+  }) => Promise<Workload | null>;
   reassignWorkload: (workloadId: string, targetWorkerId: string) => Promise<boolean>;
   startPolling: (intervalMs?: number) => void;
   stopPolling: () => void;
@@ -45,32 +57,40 @@ export const useClusterStore = create<ClusterState>((set, get) => ({
   pollHandle: null,
 
   fetchWorkers: async () => {
+    set({ isLoading: true, error: null });
     try {
-      const workers = await clusterApi.fetchWorkers();
-      set({ workers });
+      const data = await clusterApi.fetchWorkers();
+      set({ workers: data, isLoading: false });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Failed to fetch workers' });
+      set({
+        error: e instanceof Error ? e.message : 'Failed to fetch workers',
+        isLoading: false,
+      });
     }
   },
 
   fetchMasterStatus: async () => {
     try {
-      const [master, throughputHistory] = await Promise.all([
+      const [status, history] = await Promise.all([
         clusterApi.fetchMasterStatus(),
         clusterApi.fetchThroughputHistory(),
       ]);
-      set({ master, throughputHistory });
+      set({ master: status, throughputHistory: history });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Failed to fetch master status' });
+      console.error('fetchMasterStatus failed', e);
     }
   },
 
   fetchWorkloads: async () => {
+    set({ isLoading: true, error: null });
     try {
-      const workloads = await clusterApi.fetchWorkloads();
-      set({ workloads });
+      const list = await clusterApi.fetchWorkloads();
+      set({ workloads: list, isLoading: false });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Failed to fetch workloads' });
+      set({
+        error: e instanceof Error ? e.message : 'Failed to fetch workloads',
+        isLoading: false,
+      });
     }
   },
 
@@ -79,7 +99,7 @@ export const useClusterStore = create<ClusterState>((set, get) => ({
       const outputs = await clusterApi.fetchOutputs();
       set({ outputs });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Failed to fetch outputs' });
+      console.error('fetchOutputs error:', e);
     }
   },
 
@@ -88,27 +108,41 @@ export const useClusterStore = create<ClusterState>((set, get) => ({
       const errors = await clusterApi.fetchWorkerErrors(workerId);
       set({ errors });
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Failed to fetch errors' });
+      console.error('fetchErrors error:', e);
     }
   },
 
   refreshAll: async () => {
     set({ isLoading: true, error: null });
-    await Promise.all([
-      get().fetchWorkers(),
-      get().fetchMasterStatus(),
-      get().fetchWorkloads(),
-      get().fetchOutputs(),
-      get().fetchErrors(),
-    ]);
-    set({ isLoading: false });
+    try {
+      await Promise.all([
+        get().fetchWorkers(),
+        get().fetchMasterStatus(),
+        get().fetchWorkloads(),
+        get().fetchOutputs(),
+        get().fetchErrors(),
+      ]);
+    } catch (e) {
+      console.error('refreshAll error', e);
+    } finally {
+      set({ isLoading: false });
+    }
   },
 
+  // workerCount now flows straight through to clusterApi.submitWorkload,
+  // alongside the userId already pulled from useAuthStore.
   submitWorkload: async input => {
+    const userId = useAuthStore.getState().user?.id;
+    if (!userId) {
+      set({ error: 'You must be logged in to submit a job' });
+      return null;
+    }
+
     try {
-      const workload = await clusterApi.submitWorkload(input);
+      const workload = await clusterApi.submitWorkload({ ...input, userId });
       set({ workloads: [workload, ...get().workloads] });
-      // poll for completion shortly after submit
+
+      // Warm poll for visual updates as backend processes script
       setTimeout(() => {
         get().fetchWorkloads();
         get().fetchOutputs();
@@ -146,7 +180,9 @@ export const useClusterStore = create<ClusterState>((set, get) => ({
 
   stopPolling: () => {
     const handle = get().pollHandle;
-    if (handle) clearInterval(handle);
-    set({ pollHandle: null });
+    if (handle) {
+      clearInterval(handle);
+      set({ pollHandle: null });
+    }
   },
 }));

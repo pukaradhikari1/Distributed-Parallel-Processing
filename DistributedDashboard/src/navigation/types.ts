@@ -2,6 +2,11 @@
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
+  OTP: {                   // ← NEW
+    email: string;
+    username: string;
+    password: string;
+  };
   MainTabs: undefined;
   WorkerDetail: { workerId: string };
   MasterNode: undefined;

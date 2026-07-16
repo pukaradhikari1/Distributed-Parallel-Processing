@@ -20,7 +20,7 @@ const SEVERITIES: ErrorSeverity[] = ['low', 'medium', 'high', 'critical'];
 
 function AnimatedErrorCard({ item, index, navigation }: { item: any; index: number; navigation: any }) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateX = useRef(new Animated.Value(-30)).current; // slide from left for errors = feels urgent
+  const translateX = useRef(new Animated.Value(-30)).current;
   useEffect(() => {
     Animated.parallel([
       Animated.timing(opacity, { toValue: 1, duration: 320, delay: index * 60, useNativeDriver: true }),
@@ -32,7 +32,8 @@ function AnimatedErrorCard({ item, index, navigation }: { item: any; index: numb
       <Card style={styles.card} mode="contained">
         <Card.Content>
           <View style={styles.headerRow}>
-            <Text variant="titleSmall">{item.workerName}</Text>
+            {/* Fallback pattern configured to check both standard naming variations */}
+            <Text variant="titleSmall">{item.workerName || item.workerId}</Text>
             <StatusChip status={item.severity} compact />
           </View>
           <Text variant="bodyMedium" style={styles.message}>{item.message}</Text>
@@ -40,12 +41,16 @@ function AnimatedErrorCard({ item, index, navigation }: { item: any; index: numb
             {new Date(item.timestamp).toLocaleString()}
             {item.taskId ? ` · task ${item.taskId.slice(0, 8)}` : ''}
           </Text>
-          <Button
-            compact mode="text" style={styles.reassignLink}
-            onPress={() => navigation.navigate('Reassignment', { sourceWorkerId: item.workerId, workloadId: item.taskId })}
-          >
-            Reassign affected task →
-          </Button>
+
+          {/* FIX: Only render button if taskId actually exists to prevent broken navigation actions */}
+          {!!item.taskId && (
+            <Button
+              compact mode="text" style={styles.reassignLink}
+              onPress={() => navigation.navigate('Reassignment', { sourceWorkerId: item.workerId, workloadId: item.taskId })}
+            >
+              Reassign affected task →
+            </Button>
+          )}
         </Card.Content>
       </Card>
     </Animated.View>
@@ -89,8 +94,7 @@ export default function ErrorLogScreen({ navigation }: Props) {
         refreshing={isLoading}
         onRefresh={() => fetchErrors()}
         contentContainerStyle={{ paddingBottom: 32 }}
-        ListEmptyComponent={<EmptyState title="No errors" subtitle="Worker errors will show up here in real time" />}
-        renderItem={({ item, index }) => (
+        ListEmptyComponent={<EmptyState title="No errors" subtitle="Worker errors will show up here in real time" />} renderItem={({ item, index }) => (
           <AnimatedErrorCard item={item} index={index} navigation={navigation} />
         )}
       />

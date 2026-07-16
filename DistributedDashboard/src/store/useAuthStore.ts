@@ -1,8 +1,20 @@
 // src/store/useAuthStore.ts
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clusterApi, UserProfileData } from '../services/apiClient';
+import { clusterApi } from '../services/apiClient';
 import { AuthTokens, User } from '../types';
+
+export interface UserProfileData {
+  displayName: string;
+  bio: string;
+  isPremium: boolean;
+  createdAt: string;
+  role: string;
+  apiAccess: string;
+  maxWorkers: number;
+  isVerified: boolean;
+  plan: string;
+}
 
 export interface AuthState {
   user: User | null;
@@ -15,6 +27,9 @@ export interface AuthState {
   hydrate: () => Promise<void>;
   login: (username: string, password: string) => Promise<boolean>;
   register: (username: string, email: string, password: string) => Promise<boolean>;
+  sendOtp: (email: string) => Promise<boolean>;
+  verifyOtp: (email: string, otpCode: string, username: string, password: string) => Promise<boolean>;
+  resendOtp: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<boolean>;
   updateProfile: (updates: Partial<Omit<UserProfileData, 'createdAt' | 'isPremium'>>) => Promise<boolean>;
@@ -34,12 +49,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { user: User; tokens: AuthTokens; profile?: UserProfileData };
-        set({ user: parsed.user, tokens: parsed.tokens, profile: parsed.profile ?? null });
+      const data = await AsyncStorage.getItem(STORAGE_KEY);
+      if (data) {
+        const { user, tokens, profile } = JSON.parse(data);
+        set({ user, tokens, profile, isHydrated: true });
+        if (tokens?.accessToken) {
+          const { setAccessToken } = require('../services/apiClient');
+          setAccessToken(tokens.accessToken);
+        }
+      } else {
+        set({ isHydrated: true });
       }
-    } finally {
+    } catch {
       set({ isHydrated: true });
     }
   },
@@ -48,17 +69,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { user, tokens } = await clusterApi.login(username, password);
-      let profile: UserProfileData | null = null;
-      try {
-        profile = await clusterApi.getProfile(tokens.accessToken);
-      } catch {
-        profile = { displayName: username, isPremium: false, createdAt: new Date().toISOString() };
-      }
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ user, tokens, profile }));
-      set({ user, tokens, profile, isLoading: false });
+      const { setAccessToken } = require('../services/apiClient');
+      setAccessToken(tokens.accessToken);
+
+      const profile = await clusterApi.getProfile(tokens.accessToken);
+      const mappedProfile: UserProfileData = {
+        displayName: profile.displayName || user.username,
+        bio: profile.bio || '',
+        isPremium: profile.isPremium,
+        createdAt: profile.createdAt,
+        role: profile.role || 'Viewer',
+        apiAccess: profile.apiAccess || 'Read-only',
+        maxWorkers: profile.maxWorkers ?? 5,
+        isVerified: profile.isVerified ?? false,
+        plan: profile.plan || 'Free',
+      };
+
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ user, tokens, profile: mappedProfile }));
+      set({ user, tokens, profile: mappedProfile, isLoading: false });
       return true;
-    } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Login failed' });
+    } catch (err: any) {
+      set({ error: err instanceof Error ? err.message : 'Login failed', isLoading: false });
       return false;
     }
   },
@@ -66,55 +97,120 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   register: async (username, email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const { user, tokens } = await clusterApi.register(username, email, password);
-      const profile: UserProfileData = {
-        displayName: username,
-        isPremium: false,
-        createdAt: new Date().toISOString(),
-      };
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ user, tokens, profile }));
-      set({ user, tokens, profile, isLoading: false });
+      const res = await clusterApi.register(username, email, password);
+      set({ user: res.user, isLoading: false });
       return true;
-    } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Registration failed' });
+    } catch (err: any) {
+      set({ error: err instanceof Error ? err.message : 'Registration failed', isLoading: false });
       return false;
     }
   },
 
+  sendOtp: async email => {
+    set({ isLoading: true, error: null });
+    try {
+      await clusterApi.sendOtp(email);
+      set({ isLoading: false });
+      return true;
+    } catch (err: any) {
+      set({ error: err instanceof Error ? err.message : 'Failed to send OTP', isLoading: false });
+      return false;
+    }
+  },
+
+  verifyOtp: async (email, otpCode, username, password) => {
+    set({ isLoading: true, error: null });
+    try {
+      const res = await clusterApi.verifyOtp(email, otpCode, username, password);
+      const { setAccessToken } = require('../services/apiClient');
+      setAccessToken(res.tokens.accessToken);
+
+      const profile = await clusterApi.getProfile(res.tokens.accessToken);
+      const mappedProfile: UserProfileData = {
+        displayName: profile.displayName || res.user.username,
+        bio: profile.bio || '',
+        isPremium: profile.isPremium,
+        createdAt: profile.createdAt,
+        role: profile.role || 'Viewer',
+        apiAccess: profile.apiAccess || 'Read-only',
+        maxWorkers: profile.maxWorkers ?? 5,
+        isVerified: profile.isVerified ?? false,
+        plan: profile.plan || 'Free',
+      };
+
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ user: res.user, tokens: res.tokens, profile: mappedProfile }));
+      set({ user: res.user, tokens: res.tokens, profile: mappedProfile, isLoading: false });
+      return true;
+    } catch (err: any) {
+      set({ error: err instanceof Error ? err.message : 'Verification failed', isLoading: false });
+      return false;
+    }
+  },
+
+  resendOtp: async email => {
+    try {
+      await clusterApi.resendOtp(email);
+    } catch (err: any) {
+      set({ error: err instanceof Error ? err.message : 'Failed to resend OTP' });
+    }
+  },
+
   logout: async () => {
-    await clusterApi.logout();
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    try {
+      await clusterApi.logout();
+      const { setAccessToken } = require('../services/apiClient');
+      setAccessToken(null);
+      await AsyncStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore cleanup error
+    }
     set({ user: null, tokens: null, profile: null });
   },
 
   deleteAccount: async () => {
     set({ isLoading: true, error: null });
     try {
-      await clusterApi.deleteAccount();
+      const { tokens } = get();
+      if (!tokens) {
+        set({ isLoading: false, error: 'Not authenticated' });
+        return false;
+      }
+      await clusterApi.deleteAccount(tokens.accessToken);
       await AsyncStorage.removeItem(STORAGE_KEY);
       set({ user: null, tokens: null, profile: null, isLoading: false });
       return true;
-    } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Failed to delete account' });
+    } catch (err: any) {
+      set({ error: err instanceof Error ? err.message : 'Failed to delete account', isLoading: false });
       return false;
     }
   },
 
-  updateProfile: async (updates) => {
+  updateProfile: async payload => {
     set({ isProfileLoading: true, error: null });
     try {
-      await clusterApi.updateProfile(updates);
-      const current = get();
-      const updatedProfile: UserProfileData = { ...(current.profile as UserProfileData), ...updates };
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ ...parsed, profile: updatedProfile }));
+      const { tokens, profile, user } = get();
+      if (!tokens) {
+        set({ isProfileLoading: false, error: 'Not authenticated' });
+        return false;
       }
+
+      await clusterApi.updateProfile(tokens.accessToken, {
+        displayName: payload.displayName ?? profile?.displayName ?? '',
+        bio: payload.bio ?? profile?.bio ?? '',
+      });
+
+      const updatedProfile = { ...profile, ...payload } as UserProfileData;
+
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ user, tokens, profile: updatedProfile }));
+      } catch {
+        // Ignore local persistent warnings
+      }
+
       set({ profile: updatedProfile, isProfileLoading: false });
       return true;
-    } catch (e) {
-      set({ isProfileLoading: false, error: e instanceof Error ? e.message : 'Update failed' });
+    } catch (err: any) {
+      set({ error: err instanceof Error ? err.message : 'Failed to update profile', isProfileLoading: false });
       return false;
     }
   },
@@ -128,5 +224,4 @@ export const selectUser = (s: AuthState) => s.user;
 export const selectProfile = (s: AuthState) => s.profile;
 export const selectIsPremium = (s: AuthState) => s.profile?.isPremium ?? false;
 export const selectMemberSince = (s: AuthState) => s.profile?.createdAt ?? null;
-export const selectDisplayName = (s: AuthState) =>
-  s.profile?.displayName ?? s.user?.username ?? 'User';
+export const selectDisplayName = (s: AuthState) => s.profile?.displayName ?? s.user?.username ?? '';
