@@ -45,7 +45,7 @@ import grpc_server
 # ---------------------------------------------------------------------------
 # CONFIG - edit these for your setup
 # ---------------------------------------------------------------------------
-ORCHESTRATOR_URL = "192.168.1.93"#find_orchestrator()  # <-- your orchestrator's IP
+ORCHESTRATOR_URL = "http://192.168.1.94:8000"#find_orchestrator()  # <-- your orchestrator's IP
 USER_ID = "quant-user-1"
 JOB_NAME_PREFIX = "gbm_mc"
 

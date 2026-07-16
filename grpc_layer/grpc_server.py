@@ -199,7 +199,7 @@ def register_with_orchestrator(orchestrator_ip):
     
     try:
         register_url = f"http://{orchestrator_ip}:8000/register-worker"
-        response = requests.post(register_url, json=payload, timeout=5)
+        response = requests.post(register_url, json=payload, timeout=100)
         if response.status_code == 200:
             print(f"Successfully registered worker {identity['hardware_id']} with Orchestrator!")
             return True
@@ -262,7 +262,7 @@ if __name__=="__main__":
                                       "ram_percent": vitals["ram_percent"],
                                       "gpu_percent": vitals["gpu_percent"]}                       
                             heartbeat_url = f"http://{orchestrator_ip}:8000/heartbeat"
-                            response = requests.post(heartbeat_url, json=packet, timeout=2)
+                            response = requests.post(heartbeat_url, json=packet, timeout=10)
                         
                             if response.status_code == 200:
                                 print(f"[200 OK] Orchestrator: {orchestrator_ip} | CPU: {vitals['cpu_percent']}% | RAM: {vitals['ram_percent']}%  | GPU: {vitals['gpu_percent']}%    ", end="\r", flush=True)
