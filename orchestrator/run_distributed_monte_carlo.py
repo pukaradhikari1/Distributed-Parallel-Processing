@@ -59,7 +59,9 @@ def find_orchestrator():
 # ---------------------------------------------------------------------------
 # CONFIG - edit these for your setup
 # ---------------------------------------------------------------------------
-ORCHESTRATOR_URL = f"http://{find_orchestrator()}:8000"    # <-- your orchestrator's IP
+
+
+ORCHESTRATOR_URL = f"http://{find_orchestrator()}:8000"  # <-- your orchestrator's IP
 USER_ID = "quant-user-1"
 JOB_NAME_PREFIX = "gbm_mc"
 

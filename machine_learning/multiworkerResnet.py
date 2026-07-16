@@ -3,7 +3,7 @@ import os
 import sys
 # 0. set gpu undetectable so multiple workers don't try to capture the same device
 # remove following line if on real distributed system with a gpu on each worker 
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 # we need to run KERAS 2 due to a compatibility bug between TF 2.16+ and KERAS 3
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 

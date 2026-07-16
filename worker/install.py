@@ -58,7 +58,7 @@ def setup_windows():
     python_path = os.path.join(venv_path, "Scripts", "python.exe")
     pip_path = os.path.join(venv_path, "Scripts", "pip.exe")
     requirements_path = os.path.join(repo_root, "requirements.txt")
-    grpc_server_path = os.path.join(repo_root, "grpc_server.py")
+    grpc_server_path = os.path.join(repo_root,"grpc_layer", "grpc_server.py")
 
     # Check requirements.txt exists
     if not os.path.exists(requirements_path):
