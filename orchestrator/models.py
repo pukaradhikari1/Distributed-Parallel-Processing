@@ -6,6 +6,7 @@ from database import Base
 
 class Worker(BaseModel):
     worker_id: str
+    worker_name: Optional[str] = "Unknown"
     ip: str
     cores: int
     ram: int
@@ -39,6 +40,7 @@ class Job(Base):
     data_path = Column(String, nullable=True)
     weights_path = Column(String, nullable=True)
     created_at = Column(Float, default=time.time)
+    completed_at = Column(Float, nullable=True)
 
 class JobShard(Base):
     __tablename__ = "job_shards"
@@ -49,3 +51,18 @@ class JobShard(Base):
     status = Column(String, default="running")
     result = Column(String, nullable=True)
     error = Column(String, nullable=True)
+
+# --- NEW: Database-backed Worker Model ---
+class WorkerNode(Base):
+    __tablename__ = "worker_nodes"
+    worker_id = Column(String, primary_key=True, index=True)
+    worker_name = Column(String, default="Unknown")
+    ip = Column(String)
+    cores = Column(Integer)
+    ram = Column(Float)
+    status = Column(String, default="online")
+    last_seen = Column(Float)
+    current_job = Column(String, nullable=True) 
+    cpu_percent = Column(Float, default=0.0)
+    ram_percent = Column(Float, default=0.0)
+    gpu_percent = Column(Float, default=0.0)

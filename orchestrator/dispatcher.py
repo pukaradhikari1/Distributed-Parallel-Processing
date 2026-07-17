@@ -4,14 +4,21 @@ import io
 import zipfile
 from grpc_client import send_task_to_worker
 from jobs import complete_job_shard, complete_job, fail_job 
-from workers import workers
 from database import SessionLocal
-from models import Job
+
+# NEW: Import WorkerNode instead of the old workers dictionary
+from models import Job, WorkerNode 
 
 def dispatch_job(job_id: str, worker_id: str, cluster_ips: list, worker_index: int):
     db = SessionLocal()
     try:
-        worker_ip = workers[worker_id]['ip']
+        # NEW: Fetch the worker's IP address directly from the database
+        worker_node = db.query(WorkerNode).filter(WorkerNode.worker_id == worker_id).first()
+        if not worker_node:
+            raise Exception(f"Worker {worker_id} not found in database.")
+        
+        worker_ip = worker_node.ip
+        
         job = db.query(Job).filter(Job.job_id == job_id).first()
         
         if not job: return
@@ -83,6 +90,10 @@ def dispatch_job(job_id: str, worker_id: str, cluster_ips: list, worker_index: i
     except Exception as e:
         fail_job(db, job_id, str(e))
     finally:
+        # NEW: Clear the current_job status in the database instead of the dictionary
+        worker_node = db.query(WorkerNode).filter(WorkerNode.worker_id == worker_id).first()
+        if worker_node:
+            worker_node.current_job = None
+            db.commit()
+            
         db.close()
-        if worker_id in workers:
-            workers[worker_id]['current_job'] = None

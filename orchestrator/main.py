@@ -13,9 +13,9 @@ import auth
 
 Base.metadata.create_all(bind=engine)
 
-from models import Worker, Heartbeat, Job
-from workers import workers, register_worker, update_heartbeat, get_available_worker
-from jobs import create_job, assign_job, assign_job_shard, get_all_jobs
+from models import Worker, Heartbeat, Job, WorkerNode
+from workers import register_worker, update_heartbeat, get_available_worker
+from jobs import create_job, assign_job_shard, get_all_jobs
 from dispatcher import dispatch_job
 from monitor import monitor_workers
 from errors import get_all_errors
@@ -65,17 +65,17 @@ def home():
     return {'message': 'Orchestrator Running'}
 
 @app.post('/register-worker')
-def register(worker: Worker):
-    register_worker(worker.dict())
+def register(worker: Worker, db: Session = Depends(get_db)):
+    register_worker(db, worker.dict())
     print("NEW COMPUTE NODE ONLINE")
-    print(f"Node Name/ID: {worker.worker_id}")
+    print(f"Node Name/ID: {worker.worker_name or worker.worker_id}")
     print(f"IP Address:   {worker.ip}")
     print(f"Hardware:     {worker.cores} Cores | {worker.ram} GB RAM")
-    return {'message': 'Worker registered', 'workers': workers}
+    return {'message': 'Worker registered'}
 
 @app.post('/heartbeat')
-def heartbeat(data: Heartbeat):
-    success = update_heartbeat(data)
+def heartbeat(data: Heartbeat, db: Session = Depends(get_db)):
+    success = update_heartbeat(db, data)
     if not success:
         raise HTTPException(status_code=404, detail='Worker not found')
     return {'message': 'Heartbeat received'}
@@ -114,30 +114,34 @@ async def submit_job(
 
     job_id = create_job(db, user_id, job_name, script_path, data_path, weights_path, job_type)
     
-    # Register total shards in the database
     job_record = db.query(Job).filter(Job.job_id == job_id).first()
     if job_record:
         job_record.total_shards = worker_count
         db.commit()
     
-    available_workers = [
-        w_id for w_id, w_data in workers.items() 
-        if w_data.get('current_job') is None and w_data.get('status') == 'online'
-    ]
+    # NEW: Query DB and sort by CPU load directly (Intelligent Load Balancing)
+    available_workers_query = db.query(WorkerNode).filter(
+        WorkerNode.status == 'online',
+        WorkerNode.current_job == None
+    ).order_by(WorkerNode.cpu_percent.asc()).all()
 
-    if len(available_workers) < worker_count:
+    if len(available_workers_query) < worker_count:
         return {
             'job_id': job_id,
             'status': 'failed',
-            'message': f'Not enough workers available. Requested {worker_count}, but only {len(available_workers)} are free.'
+            'message': f'Not enough workers available. Requested {worker_count}, but only {len(available_workers_query)} are free.'
         }
 
-    selected_workers = available_workers[:worker_count]
-    cluster_ips = [workers[w_id]['ip'] for w_id in selected_workers]
+    selected_nodes = available_workers_query[:worker_count]
+    selected_worker_ids = [node.worker_id for node in selected_nodes]
+    cluster_ips = [node.ip for node in selected_nodes]
 
-    for index, worker_id in enumerate(selected_workers):
+    for index, worker_id in enumerate(selected_worker_ids):
         assign_job_shard(db, job_id, worker_id, index) 
-        workers[worker_id]['current_job'] = job_id
+        
+        worker_record = db.query(WorkerNode).filter(WorkerNode.worker_id == worker_id).first()
+        worker_record.current_job = job_id
+        db.commit()
         
         background_tasks.add_task(dispatch_job, job_id, worker_id, cluster_ips, index)
 
@@ -145,14 +149,23 @@ async def submit_job(
         'job_id': job_id,
         'job_name': job_name,
         'status': 'running',
-        'assigned_workers': selected_workers,
+        'assigned_workers': selected_worker_ids,
         'cluster_ips': cluster_ips,
         'message': f'Distributed job successfully dispatched to {worker_count} workers!'
     }
 
 @app.get('/workers')
-def list_workers():
-    return workers
+def list_workers(db: Session = Depends(get_db)):
+    workers = db.query(WorkerNode).all()
+    return {
+        w.worker_id: {
+            "ip": w.ip, 
+            "status": w.status, 
+            "cpu_percent": w.cpu_percent, 
+            "current_job": w.current_job,
+            "last_seen": w.last_seen
+        } for w in workers
+    }
 
 @app.get('/jobs')
 def list_jobs(db: Session = Depends(get_db)):
@@ -160,16 +173,44 @@ def list_jobs(db: Session = Depends(get_db)):
 
 @app.get('/outputs')
 def list_outputs(db: Session = Depends(get_db)):
+    from models import JobShard, WorkerNode # Ensure these are imported
+    
     completed_jobs = db.query(Job).filter(Job.status == "completed").all()
-    return {
-        job.job_id: {
+    output_data = {}
+    
+    for job in completed_jobs:
+        worker_name = "Unknown"
+        
+        # 1. Try to get the worker ID from the main job (for standard jobs)
+        active_worker_id = job.worker_id
+        
+        # 2. If it's a distributed job, grab the worker ID from the first shard
+        if not active_worker_id:
+            shard = db.query(JobShard).filter(JobShard.job_id == job.job_id).first()
+            if shard:
+                active_worker_id = shard.worker_id
+                
+        # 3. Look up the human-readable name in the database
+        if active_worker_id:
+            worker_node = db.query(WorkerNode).filter(WorkerNode.worker_id == active_worker_id).first()
+            if worker_node and worker_node.worker_name:
+                worker_name = worker_node.worker_name
+
+        # Inside the for job in completed_jobs: loop in your /outputs endpoint
+        
+        execution_time_ms = 0
+        if job.created_at and job.completed_at:
+            execution_time_ms = int((job.completed_at - job.created_at) * 1000)
+
+        output_data[job.job_id] = {
             "job_id": job.job_id,
             "filename": job.filename,
             "result": job.result,
-            "worker_id": job.worker_id,
+            "worker_name": worker_name, 
+            "worker_id": active_worker_id,
+            "execution_time_ms": execution_time_ms # Send this to Android
         }
-        for job in completed_jobs
-    }
+    return output_data
 
 @app.get('/errors')
 def list_errors():
