@@ -159,9 +159,11 @@ def list_workers(db: Session = Depends(get_db)):
     workers = db.query(WorkerNode).all()
     return {
         w.worker_id: {
+            "worker_name": w.worker_name,
             "ip": w.ip, 
             "status": w.status, 
             "cpu_percent": w.cpu_percent, 
+            "ram_percent": w.ram_percent, 
             "current_job": w.current_job,
             "last_seen": w.last_seen
         } for w in workers
