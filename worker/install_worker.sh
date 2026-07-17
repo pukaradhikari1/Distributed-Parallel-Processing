@@ -17,6 +17,13 @@ echo "=========================================="
 echo "Worker Dir: $WORKER_DIR"
 echo "gRPC Layer: $GRPC_LAYER_DIR"
 
+export PATH="/usr/lib/wsl/lib:/usr/local/cuda/bin:$PATH"
+export LD_LIBRARY_PATH="/usr/lib/wsl/lib:/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
+
+# Prevent TensorFlow from crashing on 4GB RTX 2050
+export TF_FORCE_GPU_ALLOW_GROWTH=true
+export CUDA_VISIBLE_DEVICES=0
+
 # 4. Check for Python 3
 if ! command -v python3 &> /dev/null
 then
@@ -25,7 +32,10 @@ then
 fi
 
 # 5. Check/Create Virtual Environment inside the worker folder
-VENV_PATH="$WORKER_DIR/venv"
+VENV_PATH="$( cd "$WORKER_DIR/.." && pwd )/venv"
+
+echo "Using Virtual Env at: $VENV_PATH"
+
 if [ ! -d "$VENV_PATH" ]; then
     echo "Creating virtual environment..."
     python3 -m venv "$VENV_PATH"

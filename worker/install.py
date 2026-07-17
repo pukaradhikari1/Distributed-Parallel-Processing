@@ -17,6 +17,24 @@ def setup_linux():
     sh_path = os.path.abspath(os.path.join(current_dir, "install_worker.sh"))
     user = os.environ.get('SUDO_USER') or pwd.getpwuid(os.getuid())[0]
 
+    try:
+        smi_path = subprocess.check_output(["which", "nvidia-smi"]).decode().strip()
+        smi_bin_dir = os.path.dirname(smi_path)
+    except:
+        if os.path.exists("/usr/lib/wsl/lib/nvidia-smi"):
+            smi_bin_dir = "/usr/lib/wsl/lib"
+        else:
+            smi_bin_dir = "/usr/bin"
+
+    possible_lib_paths = [
+        "/usr/lib/wsl/lib",            # WSL2 Drivers
+        "/usr/local/cuda/lib64",       # Standard CUDA
+        "/usr/lib/x86_64-linux-gnu"    # Ubuntu Drivers
+    ]
+    # Only keep paths that actually exist on this computer
+    valid_libs = [p for p in possible_lib_paths if os.path.exists(p)]
+    ld_path = ":".join(valid_libs)
+
     # Define the Service File
     service_content = f"""[Unit]
 Description=Distributed Worker Node
@@ -31,6 +49,11 @@ ExecStart=/bin/bash {sh_path}
 Restart=always
 RestartSec=10
 
+Environment="PATH={smi_bin_dir}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="LD_LIBRARY_PATH={ld_path}"
+Environment="TF_FORCE_GPU_ALLOW_GROWTH=true"
+Environment="CUDA_VISIBLE_DEVICES=0"
+
 [Install]
 WantedBy=multi-user.target
 """
@@ -40,6 +63,9 @@ WantedBy=multi-user.target
     with open(service_path, "w") as f:
         f.write(service_content)
 
+    print("Installing Systemd Service (Requires Sudo)...")
+    print(f"Auto-detected GPU Binaries: {smi_bin_dir}")
+    print(f"Auto-detected GPU Libraries: {ld_path}")
     print("Installing Systemd Service (Requires Sudo)...")
     os.system(f"sudo mv {service_path} /etc/systemd/system/worker.service")
     os.system("sudo systemctl daemon-reload")
