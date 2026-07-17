@@ -196,6 +196,7 @@ def register_with_orchestrator(orchestrator_ip):
     payload = {
         "worker_id": identity["hardware_id"],
         "ip": get_local_ip(),
+        "worker_name": identity["display_name"],
         "cores": identity["cpu_cores"],
         "ram": identity["ram_gb"]
     }

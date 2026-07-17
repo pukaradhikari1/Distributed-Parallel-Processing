@@ -16,7 +16,7 @@ async def monitor_workers():
             all_workers = db.query(WorkerNode).all()
 
             for worker in all_workers:
-                if current_time - worker.last_seen > 30:
+                if current_time - worker.last_seen > 3600:
                     if worker.status != 'offline':
                         print(f"Worker {worker.worker_id} went offline")
                         log_error(worker_id=worker.worker_id, severity="high", message="Heartbeat timeout")
