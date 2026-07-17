@@ -223,5 +223,5 @@ export const selectIsAuthenticated = (s: AuthState) => !!s.tokens;
 export const selectUser = (s: AuthState) => s.user;
 export const selectProfile = (s: AuthState) => s.profile;
 export const selectIsPremium = (s: AuthState) => s.profile?.isPremium ?? false;
-export const selectMemberSince = (s: AuthState) => s.profile?.createdAt ?? null;
+export const selectMemberSince = (state) => state.user?.created_at || state.user?.timestamp;
 export const selectDisplayName = (s: AuthState) => s.profile?.displayName ?? s.user?.username ?? '';

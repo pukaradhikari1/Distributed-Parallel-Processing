@@ -11,9 +11,6 @@ import EmptyState from '../components/EmptyState';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkerDetail'>;
 
-// How often to re-fetch while this screen is open, so CPU/RAM/GPU numbers
-// update live instead of only on pull-to-refresh. Matches the worker
-// script's own heartbeat interval (it posts vitals every 4s).
 const LIVE_POLL_MS = 4000;
 
 function AnimatedCard({ children, delay = 0, style }: { children: React.ReactNode; delay?: number; style?: any }) {
@@ -36,8 +33,6 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
 
   useEffect(() => { fetchErrors(workerId); }, [workerId]);
 
-  // Real-time updates: poll fetchWorkers() on an interval while this screen
-  // is mounted, so CPU/RAM/GPU usage and last-heartbeat time stay live.
   useEffect(() => {
     const handle = setInterval(() => {
       fetchWorkers();
@@ -49,7 +44,10 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
 
   if (!worker) return <EmptyState title="Worker not found" subtitle="It may have been removed from the cluster" />;
 
-  const ramPercent = (worker.ram.usedMB / worker.ram.totalMB) * 100;
+  // SAFE GUARDRAIL: Prevents NaN values if totalMB is 0 during initial network handshakes
+  const totalRAM = worker.ram.totalMB ?? 0;
+  const usedRAM = worker.ram.usedMB ?? 0;
+  const ramPercent = totalRAM > 0 ? (usedRAM / totalRAM) * 100 : 0;
 
   return (
     <ScrollView
@@ -67,16 +65,16 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
           <StatusChip status={worker.status} />
         </View>
         <Text variant="bodySmall" style={styles.subtle}>
-          Last heartbeat: {new Date(worker.lastHeartbeat).toLocaleString()}
+          Last heartbeat: {worker.lastHeartbeat ? new Date(worker.lastHeartbeat).toLocaleString() : 'Never'}
         </Text>
       </AnimatedCard>
 
       <AnimatedCard delay={80} style={styles.card}>
         <Card mode="contained">
           <Card.Content style={styles.donutRow}>
-            <ResourceDonut label="CPU" percent={worker.cpu.usagePercent} />
+            <ResourceDonut label="CPU" percent={worker.cpu?.usagePercent ?? 0} />
             <ResourceDonut label="RAM" percent={ramPercent} />
-            {worker.gpu && <ResourceDonut label="GPU" percent={worker.gpu.usagePercent} />}
+            {worker.gpu && <ResourceDonut label="GPU" percent={worker.gpu?.usagePercent ?? 0} />}
           </Card.Content>
         </Card>
       </AnimatedCard>
@@ -86,9 +84,9 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
           <Card.Content>
             <Text variant="titleMedium" style={styles.sectionTitle}>Hardware</Text>
             <DetailRow label="Display name" value={worker.name} />
-            <DetailRow label="OS" value={worker.os ?? 'Unknown'} />
-            <DetailRow label="CPU cores" value={`${worker.cpu.cores}`} />
-            <DetailRow label="RAM" value={`${(worker.ram.usedMB / 1024).toFixed(1)} / ${(worker.ram.totalMB / 1024).toFixed(1)} GB`} />
+            <DetailRow label="OS" value={worker.os ?? 'Unknown OS'} />
+            <DetailRow label="CPU cores" value={`${worker.cpu?.cores ?? 1}`} />
+            <DetailRow label="RAM" value={`${(usedRAM / 1024).toFixed(1)} / ${(totalRAM / 1024).toFixed(1)} GB`} />
             {worker.gpu ? (
               <>
                 <DetailRow label="GPU model" value={worker.gpu.model ?? 'Unknown'} />
@@ -105,9 +103,9 @@ export default function WorkerDetailScreen({ route, navigation }: Props) {
         <Card mode="contained">
           <Card.Content>
             <Text variant="titleMedium" style={styles.sectionTitle}>
-              Active Tasks ({worker.activeTaskIds.length})
+              Active Tasks ({worker.activeTaskIds?.length ?? 0})
             </Text>
-            {worker.activeTaskIds.length === 0
+            {(!worker.activeTaskIds || worker.activeTaskIds.length === 0)
               ? <Text style={styles.subtle}>No active tasks on this worker</Text>
               : worker.activeTaskIds.map(taskId => (
                 <Text key={taskId} variant="bodyMedium" style={styles.taskId}>• {taskId}</Text>

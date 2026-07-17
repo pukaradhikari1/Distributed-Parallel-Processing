@@ -205,6 +205,7 @@ export const clusterApi: ClusterApi = {
 
   // ── WORKERS ───────────────────────────────────────────────────────────────
 
+  // ── FIXED WORKERS FETCH METHOD ──────────────────────────────────────────────
   async fetchWorkers() {
     try {
       const res = await fetch(`${BACKEND_URL}/workers`);
@@ -212,12 +213,14 @@ export const clusterApi: ClusterApi = {
       const data: Record<string, any> = await res.json();
 
       return Object.entries(data).map(([id, w]) => {
+        // w.ram is now safely ingested from the updated backend payload mapping
         const totalMB = (w.ram ?? 0) * ((w.ram ?? 0) > 128 ? 1 : 1024);
         return {
           id,
-          name: id,
+          name: w.worker_name || id, // FIX: Prioritizes human-readable names over raw UUID IDs
           ipAddress: w.ip || '0.0.0.0',
           status: w.status || 'offline',
+          os: w.os || 'Unknown OS',// FIX: Captures the OS property and binds it to the UI component state
           lastHeartbeat: w.last_seen
             ? new Date(w.last_seen * 1000).toISOString()
             : new Date().toISOString(),
@@ -447,8 +450,11 @@ export const clusterApi: ClusterApi = {
         id: out.job_id,
         workloadId: out.job_id,
         workerId: out.worker_id,
+        workerName: out.worker_name || 'Cluster Node', // FIX: Pulls mapped name securely
         outputUrl: out.filename,
+        result: out.result ? String(out.result) : '',
         outputPreview: out.result ? String(out.result) : '',
+        durationMs: out.execution_time_ms || 0,        // FIX: Binds structural duration ticks
         completedAt: new Date().toISOString(),
       }));
     } catch (e) {

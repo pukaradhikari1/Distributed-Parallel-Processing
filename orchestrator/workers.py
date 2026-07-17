@@ -5,23 +5,26 @@ def register_worker(db, worker_data):
     worker_id = worker_data['worker_id']
     worker = db.query(WorkerNode).filter(WorkerNode.worker_id == worker_id).first()
     
-    # Extract name, default to "Unknown" if missing
+    # Extract name and OS, default to safe fallbacks if missing
     w_name = worker_data.get('worker_name', 'Unknown') 
+    w_os = worker_data.get('os', 'Unknown OS') # FIX: Capture OS from incoming payload
     
     if worker:
-        worker.worker_name = w_name # Update name if it re-registers
+        worker.worker_name = w_name 
         worker.ip = worker_data['ip']
         worker.cores = worker_data['cores']
         worker.ram = worker_data['ram']
+        worker.os = w_os            # FIX: Update OS if a node re-registers
         worker.status = 'online'
         worker.last_seen = time.time()
     else:
         worker = WorkerNode(
             worker_id=worker_id,
-            worker_name=w_name, # Save name on creation
+            worker_name=w_name, 
             ip=worker_data['ip'],
             cores=worker_data['cores'],
             ram=worker_data['ram'],
+            os=worker_data.os,                # FIX: Save OS on node creation
             status='online',
             last_seen=time.time()
         )
@@ -43,6 +46,10 @@ def update_heartbeat(db, heartbeat_data):
             worker.ram_percent = heartbeat_data.ram_percent
         if getattr(heartbeat_data, 'gpu_percent', None) is not None:
             worker.gpu_percent = heartbeat_data.gpu_percent
+            
+        # Optional Guardrail: If OS hasn't been set yet, check if it's arriving in the heartbeat
+        if hasattr(heartbeat_data, 'os') and heartbeat_data.os:
+            worker.os = heartbeat_data.os
             
         db.commit()
         return True

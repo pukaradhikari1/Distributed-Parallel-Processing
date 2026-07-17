@@ -2,11 +2,12 @@ import os
 import asyncio
 import socket
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
-from typing import Optional
-from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+
 from database import engine, Base, get_db
 import models 
 import auth   
@@ -66,7 +67,9 @@ def home():
 
 @app.post('/register-worker')
 def register(worker: Worker, db: Session = Depends(get_db)):
-    register_worker(db, worker.dict())
+    # Compatibility fix: Supports Pydantic v1 dict() and Pydantic v2 model_dump() safely
+    worker_data = worker.model_dump() if hasattr(worker, "model_dump") else worker.dict()
+    register_worker(db, worker_data)
     print("NEW COMPUTE NODE ONLINE")
     print(f"Node Name/ID: {worker.worker_name or worker.worker_id}")
     print(f"IP Address:   {worker.ip}")
@@ -93,21 +96,27 @@ async def submit_job(
     weights_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db)
 ):
-    job_dir = os.path.join('uploads', script_file.filename.split('.')[0] + "_" + os.urandom(4).hex())
+    # CRITICAL FIX: Graceful extraction fallback for dynamically generated UI Blobs
+    raw_filename = script_file.filename if script_file.filename else "script.py"
+    clean_base = raw_filename.split('.')[0] if '.' in raw_filename else "script"
+    if not clean_base:
+        clean_base = "script"
+        
+    job_dir = os.path.join('uploads', f"{clean_base}_{os.urandom(4).hex()}")
     os.makedirs(job_dir, exist_ok=True)
 
-    script_path = os.path.join(job_dir, script_file.filename)
+    script_path = os.path.join(job_dir, raw_filename)
     with open(script_path, "wb") as f:
         f.write(await script_file.read())
 
     data_path = None
-    if data_file:
+    if data_file and data_file.filename:
         data_path = os.path.join(job_dir, data_file.filename)
         with open(data_path, "wb") as f:
             f.write(await data_file.read())
 
     weights_path = None
-    if weights_file:
+    if weights_file and weights_file.filename:
         weights_path = os.path.join(job_dir, weights_file.filename)
         with open(weights_path, "wb") as f:
             f.write(await weights_file.read())
@@ -119,7 +128,7 @@ async def submit_job(
         job_record.total_shards = worker_count
         db.commit()
     
-    # NEW: Query DB and sort by CPU load directly (Intelligent Load Balancing)
+    # Load balancing worker selection
     available_workers_query = db.query(WorkerNode).filter(
         WorkerNode.status == 'online',
         WorkerNode.current_job == None
@@ -140,8 +149,10 @@ async def submit_job(
         assign_job_shard(db, job_id, worker_id, index) 
         
         worker_record = db.query(WorkerNode).filter(WorkerNode.worker_id == worker_id).first()
-        worker_record.current_job = job_id
-        db.commit()
+        # CRITICAL FIX: Safe element checking prevents crashes during high-concurrency node disconnects
+        if worker_record:
+            worker_record.current_job = job_id
+            db.commit()
         
         background_tasks.add_task(dispatch_job, job_id, worker_id, cluster_ips, index)
 
@@ -164,6 +175,9 @@ def list_workers(db: Session = Depends(get_db)):
             "status": w.status, 
             "cpu_percent": w.cpu_percent, 
             "ram_percent": w.ram_percent, 
+            "ram": w.ram,
+            "cores": w.cores,
+            "os": getattr(w, "os", "Unknown OS"),  # FIX: Fetches the OS string from the DB model safely
             "current_job": w.current_job,
             "last_seen": w.last_seen
         } for w in workers
@@ -175,30 +189,24 @@ def list_jobs(db: Session = Depends(get_db)):
 
 @app.get('/outputs')
 def list_outputs(db: Session = Depends(get_db)):
-    from models import JobShard, WorkerNode # Ensure these are imported
+    from models import JobShard, WorkerNode
     
     completed_jobs = db.query(Job).filter(Job.status == "completed").all()
     output_data = {}
     
     for job in completed_jobs:
         worker_name = "Unknown"
-        
-        # 1. Try to get the worker ID from the main job (for standard jobs)
         active_worker_id = job.worker_id
         
-        # 2. If it's a distributed job, grab the worker ID from the first shard
         if not active_worker_id:
             shard = db.query(JobShard).filter(JobShard.job_id == job.job_id).first()
             if shard:
                 active_worker_id = shard.worker_id
                 
-        # 3. Look up the human-readable name in the database
         if active_worker_id:
             worker_node = db.query(WorkerNode).filter(WorkerNode.worker_id == active_worker_id).first()
             if worker_node and worker_node.worker_name:
                 worker_name = worker_node.worker_name
-
-        # Inside the for job in completed_jobs: loop in your /outputs endpoint
         
         execution_time_ms = 0
         if job.created_at and job.completed_at:
@@ -210,7 +218,7 @@ def list_outputs(db: Session = Depends(get_db)):
             "result": job.result,
             "worker_name": worker_name, 
             "worker_id": active_worker_id,
-            "execution_time_ms": execution_time_ms # Send this to Android
+            "execution_time_ms": execution_time_ms
         }
     return output_data
 

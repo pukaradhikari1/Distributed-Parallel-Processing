@@ -5,7 +5,7 @@ import random
 import smtplib
 import uuid
 from email.message import EmailMessage
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
@@ -18,25 +18,22 @@ from schemas import (
     UserSignup, UserLogin, TokenResponse, ProfileUpdate, 
     SendOTPRequest, VerifyOTPRequest
 )
-
 from database import Base, get_db
 
 load_dotenv()
 
-# creating database tabel model 
 class DBUser(Base):
     __tablename__ = "users"
     
-    # CRITICAL FIX: Generates a unique string to match your Job table's foreign key
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     
     display_name = Column(String, nullable=True)
     bio = Column(String, nullable=True)
-    created_at = Column(String, default=lambda: datetime.utcnow().strftime("%B %d, %Y"))
+    # Modernized date generation tracking
+    created_at = Column(String, default=lambda: datetime.now(timezone.utc).strftime("%B %d, %Y"))
     plan = Column(String, default="Free")
     
     role = Column(String, default="Viewer")
@@ -48,7 +45,6 @@ class DBUser(Base):
     otp_expire_at = Column(DateTime, nullable=True)
 
 
-# email config thr env
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER", "your_email@gmail.com")
@@ -72,7 +68,6 @@ def send_email_background(to_email: str, subject: str, body: str):
         print(f"Failed to send email to {to_email}: {e}")
 
 
-#password hashing
 def verify_password(plain_password, hashed_password):
     pre_hashed = hashlib.sha256(plain_password.encode('utf-8')).hexdigest().encode('utf-8')
     return bcrypt.checkpw(pre_hashed, hashed_password.encode('utf-8'))
@@ -83,7 +78,6 @@ def get_password_hash(password):
     return bcrypt.hashpw(pre_hashed, salt).decode('utf-8')
 
 
-# jwt token 
 SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 
@@ -92,7 +86,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    # Updated to modern timezone standard
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -117,7 +112,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-# FastAPI Routes
 router = APIRouter()
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -128,7 +122,6 @@ def signup(user: UserSignup, background_tasks: BackgroundTasks, db: Session = De
         raise HTTPException(status_code=400, detail="Email already registered")
     
     hashed_pw = get_password_hash(user.password)
-    
     new_user = DBUser(username=user.username, email=user.email, hashed_password=hashed_pw)
     db.add(new_user)
     db.commit()
@@ -147,7 +140,6 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             detail="Incorrect username or password",
         )
         
-    # --- THE MISSING VERIFICATION GUARDRAIL ---
     if not db_user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -167,7 +159,8 @@ def send_otp(req: SendOTPRequest, background_tasks: BackgroundTasks, db: Session
     otp = "".join(random.choices("0123456789", k=6))
     
     user.otp_code = otp
-    user.otp_expire_at = datetime.utcnow() + timedelta(minutes=10)
+    # Strips explicit timezone info to match naive SQLAlchemy target storage
+    user.otp_expire_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=10)
     db.commit()
 
     email_body = f"Hello {user.username},\n\nYour verification code is: {otp}\n\nThis code will expire in 10 minutes."
@@ -185,7 +178,8 @@ def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
     if not user.otp_code or user.otp_code != req.otp:
         raise HTTPException(status_code=400, detail="Invalid OTP code")
 
-    if user.otp_expire_at and datetime.utcnow() > user.otp_expire_at:
+    # Fixed comparison tracking utilizing matching naive time objects
+    if user.otp_expire_at and datetime.now(timezone.utc).replace(tzinfo=None) > user.otp_expire_at:
         raise HTTPException(status_code=400, detail="OTP has expired. Please request a new one.")
 
     user.is_verified = True
@@ -196,7 +190,6 @@ def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
     return {"message": "Email verified successfully"}
 
 
-# pf and account management
 @router.get("/profile")
 def get_profile(current_user: DBUser = Depends(get_current_user)):
     return {

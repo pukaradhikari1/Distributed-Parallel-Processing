@@ -10,6 +10,7 @@ class Worker(BaseModel):
     ip: str
     cores: int
     ram: int
+    os: Optional[str] = "Unknown OS"
 
 class Heartbeat(BaseModel):
     worker_id: Optional[str] = None
@@ -52,7 +53,7 @@ class JobShard(Base):
     result = Column(String, nullable=True)
     error = Column(String, nullable=True)
 
-# --- NEW: Database-backed Worker Model ---
+# --- Database-backed Worker Model ---
 class WorkerNode(Base):
     __tablename__ = "worker_nodes"
     worker_id = Column(String, primary_key=True, index=True)
@@ -60,6 +61,7 @@ class WorkerNode(Base):
     ip = Column(String)
     cores = Column(Integer)
     ram = Column(Float)
+    os = Column(String, default="Unknown OS", nullable=True) # 👈 FIX: Added database column here
     status = Column(String, default="online")
     last_seen = Column(Float)
     current_job = Column(String, nullable=True) 
