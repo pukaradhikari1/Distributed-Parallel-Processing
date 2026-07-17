@@ -84,12 +84,13 @@ BATCH_SIZE = 2_000_000            # in-shard chunk size passed to the worker
 
 POLL_INTERVAL_SEC = 3
 POLL_TIMEOUT_SEC = 600
+MAX_SHARD_RETRIES = 3
 SCRIPT_PATH = "monte_carlo_shard.py"
 # ---------------------------------------------------------------------------
 
 
 def get_idle_workers():
-    resp = requests.get(f"{ORCHESTRATOR_URL}/workers", timeout=10)
+    resp = requests.get(f"{ORCHESTRATOR_URL}/workers", timeout=100)
     resp.raise_for_status()
     workers = resp.json()
     return [
@@ -201,44 +202,63 @@ def run():
           f"{shard_sizes}")
 
     all_partial_results = []
+    permanently_failed = []
     shard_index = 0
-    pending_sizes = list(shard_sizes)
+    # Each entry is (num_simulations, retry_count). A shard that fails or
+    # times out gets pushed back on with retry_count + 1 instead of just
+    # being dropped -- previously a failed shard's simulations silently
+    # disappeared from the final total with no error, just a console line.
+    pending = [(size, 0) for size in shard_sizes]
 
-    while pending_sizes:
+    while pending:
         idle = get_idle_workers()
         if not idle:
             print("No idle workers right now, waiting...")
             time.sleep(POLL_INTERVAL_SEC)
             continue
 
-        batch = pending_sizes[:len(idle)]
-        pending_sizes = pending_sizes[len(idle):]
+        batch = pending[:len(idle)]
+        pending = pending[len(idle):]
 
         print(f"\nSubmitting a round of {len(batch)} shard(s)...")
-        job_ids = []
-        for size in batch:
+        job_meta = {}  # job_id -> (size, retry_count)
+        for size, retry_count in batch:
             seed = BASE_SEED + shard_index
             job_id = submit_shard(shard_index, size, seed)
-            job_ids.append(job_id)
+            job_meta[job_id] = (size, retry_count)
             shard_index += 1
 
         print("Polling for completion...")
-        results = poll_jobs(job_ids)
+        results = poll_jobs(list(job_meta.keys()))
 
         for jid, (status, payload) in results.items():
+            size, retry_count = job_meta[jid]
+
             if status == "completed":
                 parsed = parse_result_json(payload)
                 if parsed:
                     all_partial_results.append(parsed)
                     print(f"  {jid}: OK - {parsed['count']:,} sims, "
                           f"partial mean={parsed['partial_sum'] / parsed['count']:.4f}")
-                else:
-                    print(f"  {jid}: completed but couldn't parse RESULT_JSON. Raw: {payload!r}")
+                    continue
+                print(f"  {jid}: completed but couldn't parse RESULT_JSON. Raw: {payload!r}")
             else:
                 print(f"  {jid}: {status.upper()} - {payload}")
 
-    aggregate(all_partial_results)
+            if retry_count < MAX_SHARD_RETRIES:
+                pending.append((size, retry_count + 1))
+                print(f"    -> requeuing {size:,} sims (attempt {retry_count + 2}/{MAX_SHARD_RETRIES + 1})")
+            else:
+                permanently_failed.append(size)
+                print(f"    -> giving up on {size:,} sims after {MAX_SHARD_RETRIES + 1} attempts")
 
+    if permanently_failed:
+        dropped = sum(permanently_failed)
+        print(f"\nWARNING: {dropped:,} simulations across {len(permanently_failed)} "
+              f"shard(s) never completed after {MAX_SHARD_RETRIES + 1} attempts each "
+              f"and were excluded from the result below.")
+
+    aggregate(all_partial_results)
 
 def aggregate(partials):
     if not partials:

@@ -33,6 +33,9 @@ sys.path.append(grpc_path)
 import distributed_pb2
 import distributed_pb2_grpc
 
+# Must stay comfortably under grpc_client.py's ExecuteTask timeout (3600s).
+TASK_TIMEOUT_SECONDS = 3540  # 59 minutes
+
 def get_identity():
     system_name = platform.system()
     if system_name == "Darwin":
@@ -110,7 +113,7 @@ class WorkerServiceServicer(distributed_pb2_grpc.WorkerServiceServicer):
             result=subprocess.run([sys.executable,script_file,data_file,weight_file],
                                   capture_output=True,
                                   text=True,
-                                  timeout=290)
+                                  timeout=TASK_TIMEOUT_SECONDS)
             
             loss_val=0.0
             try:

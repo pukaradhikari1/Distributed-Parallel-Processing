@@ -122,7 +122,7 @@ async def submit_job(
     
     available_workers = [
         w_id for w_id, w_data in workers.items() 
-        if w_data.get('current_job') is None
+        if w_data.get('current_job') is None and w_data.get('status') == 'online'
     ]
 
     if len(available_workers) < worker_count:

@@ -26,6 +26,7 @@ async def monitor_workers():
                     for job in active_jobs:
                         print(f"Reassigning job {job.job_id}")
                         requeue_job(db, job.job_id)
+                        worker['current_job'] = None
                         new_worker = get_available_worker()
 
                         if new_worker:

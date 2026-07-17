@@ -3,16 +3,19 @@ import time
 workers = {}
 
 def register_worker(worker_data):
-    workers[worker_data['worker_id']] = {
+    worker_id = worker_data['worker_id']
+    existing = workers.get(worker_id)
+
+    workers[worker_id] = {
         'ip': worker_data['ip'],
         'cores': worker_data['cores'],
         'ram': worker_data['ram'],
         'status': 'online',
         'last_seen': time.time(),
-        'current_job': None,
-        'cpu_percent': 0.0,  
-        'ram_percent': 0.0,
-        'gpu_percent': 0.0  
+        'current_job': existing['current_job'] if existing else None,
+        'cpu_percent': existing['cpu_percent'] if existing else 0.0,
+        'ram_percent': existing['ram_percent'] if existing else 0.0,
+        'gpu_percent': existing['gpu_percent'] if existing else 0.0,
     }
 
 def update_heartbeat(heartbeat_data):
