@@ -2,7 +2,7 @@
 *.pyc
 *.pyo
 *.pyd
-
+.env
 dpp_venv/
 venv/
 .venv/
