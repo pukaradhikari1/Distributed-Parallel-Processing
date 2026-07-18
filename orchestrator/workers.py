@@ -24,7 +24,7 @@ def register_worker(db, worker_data):
             ip=worker_data['ip'],
             cores=worker_data['cores'],
             ram=worker_data['ram'],
-            os=worker_data.os,                # FIX: Save OS on node creation
+            os=w_os,                # FIX: Save OS on node creation
             status='online',
             last_seen=time.time()
         )
