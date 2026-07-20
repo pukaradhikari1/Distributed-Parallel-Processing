@@ -192,13 +192,19 @@ def verify_otp(req: VerifyOTPRequest, db: Session = Depends(get_db)):
 
 @router.get("/profile")
 def get_profile(current_user: DBUser = Depends(get_current_user)):
+    
+    member_date = current_user.created_at if current_user.created_at else "July 19, 2026"
+    
     return {
         "username": current_user.username,
-        "email": current_user.email,
+        "email": current_user.email, 
         "is_verified": current_user.is_verified, 
         "display_name": current_user.display_name or current_user.username,
         "bio": current_user.bio or "",
-        "created_at": current_user.created_at,
+        
+        "created_at": member_date,      
+        "member_since": member_date,   
+        
         "plan": current_user.plan,
         "role": current_user.role,
         "api_access": current_user.api_access,
